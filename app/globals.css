@@ -1,0 +1,98 @@
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  background-color: #E3F2FD;
+  color: #0B1E33;
+}
+
+/* Focus visibility */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid #291B8D;
+  outline-offset: 3px;
+}
+
+/* Cargo-tag perforated edge, used on the hero manifest card */
+.perforated {
+  position: relative;
+}
+.perforated::before,
+.perforated::after {
+  content: "";
+  position: absolute;
+  top: -10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #E3F2FD;
+  z-index: 5;
+}
+.perforated::before {
+  left: -10px;
+}
+.perforated::after {
+  right: -10px;
+}
+
+/* Container-yard grid texture for dark sections */
+.yard-grid {
+  background-image:
+    linear-gradient(to right, rgba(241, 243, 237, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(241, 243, 237, 0.07) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+/* dashed route line */
+.route-line {
+  background-image: linear-gradient(to right, #C7CCC3 0 8px, transparent 8px 16px);
+  background-size: 16px 2px;
+  background-repeat: repeat-x;
+  background-position: center;
+  height: 2px;
+}
+.route-line-dark {
+  background-image: linear-gradient(to right, rgba(241,243,237,0.35) 0 8px, transparent 8px 16px);
+  background-size: 16px 2px;
+  background-repeat: repeat-x;
+  background-position: center;
+  height: 2px;
+}
+
+.stamp-rotate {
+  transform: rotate(-8deg);
+}
