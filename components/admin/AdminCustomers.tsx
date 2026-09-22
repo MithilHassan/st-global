@@ -6,6 +6,7 @@ import {
   Mail,
   Phone,
   Building2,
+  MapPin,
   DollarSign,
   Wallet,
   Boxes,
@@ -34,9 +35,10 @@ interface CustomerInvoice {
 interface Customer {
   key: string;
   name: string;
-  company: string | null;
-  email: string;
-  phone: string;
+  consignee: string | null;
+  billTo: string | null;
+  email: string | null;
+  phone: string | null;
   bookings: CustomerBooking[];
   invoices: CustomerInvoice[];
   lastBookingAt: string;
@@ -84,7 +86,8 @@ export default function AdminCustomers() {
         c = {
           key,
           name: b.shipper_name,
-          company: b.shipper_company,
+          consignee: b.consignee_name,
+          billTo: b.bill_to,
           email: b.shipper_email,
           phone: b.shipper_phone,
           bookings: [],
@@ -106,8 +109,9 @@ export default function AdminCustomers() {
       if (new Date(b.created_at).getTime() > new Date(c.lastBookingAt).getTime()) {
         c.lastBookingAt = b.created_at;
       }
-      // Prefer the most recently-seen company/phone in case it changed across bookings.
-      if (b.shipper_company) c.company = b.shipper_company;
+      // Prefer the most recently-seen consignee/bill-to in case it changed across bookings.
+      if (b.consignee_name) c.consignee = b.consignee_name;
+      if (b.bill_to) c.billTo = b.bill_to;
     }
 
     for (const inv of rawInvoices) {
@@ -136,7 +140,7 @@ export default function AdminCustomers() {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return customers;
     return customers.filter((c) =>
-      [c.name, c.company, c.email, c.phone].filter(Boolean).join(" ").toLowerCase().includes(q)
+      [c.name, c.consignee, c.billTo, c.email, c.phone].filter(Boolean).join(" ").toLowerCase().includes(q)
     );
   }, [customers, searchQuery]);
 
@@ -170,7 +174,7 @@ export default function AdminCustomers() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search name, company, email, phone…"
+                placeholder="Search name, consignee, bill to, email, phone…"
                 className="w-full border border-line bg-white px-3 py-2 text-sm placeholder:text-ink/30 focus:border-royal"
               />
               <p className="mt-3 font-mono text-[11px] uppercase tracking-wide text-ink/40">
@@ -203,7 +207,7 @@ export default function AdminCustomers() {
                           </span>
                         </div>
                         <p className="mt-0.5 truncate text-xs text-ink/50">
-                          {c.company ? `${c.company} · ` : ""}
+                          {c.consignee ? `${c.consignee} · ` : ""}
                           {c.bookings.length} booking{c.bookings.length === 1 ? "" : "s"}
                         </p>
                       </div>
@@ -226,19 +230,28 @@ export default function AdminCustomers() {
                   </span>
                   <div className="min-w-0">
                     <p className="font-display text-lg font-semibold leading-tight">{selected.name}</p>
-                    {selected.company && (
+                    {selected.consignee && (
                       <p className="mt-0.5 flex items-center gap-1.5 text-sm text-ink/60">
-                        <Building2 size={13} /> {selected.company}
+                        <Building2 size={13} /> Consignee: {selected.consignee}
                       </p>
                     )}
-                    <p className="mt-1 flex items-center gap-1.5 text-xs text-ink/50">
-                      <Mail size={12} />
-                      <a href={`mailto:${selected.email}`} className="hover:underline">{selected.email}</a>
-                    </p>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink/50">
-                      <Phone size={12} />
-                      <a href={`tel:${selected.phone}`} className="hover:underline">{selected.phone}</a>
-                    </p>
+                    {selected.billTo && (
+                      <p className="mt-0.5 flex items-start gap-1.5 text-xs text-ink/50">
+                        <MapPin size={12} className="mt-0.5 shrink-0" /> {selected.billTo}
+                      </p>
+                    )}
+                    {selected.email && (
+                      <p className="mt-1 flex items-center gap-1.5 text-xs text-ink/50">
+                        <Mail size={12} />
+                        <a href={`mailto:${selected.email}`} className="hover:underline">{selected.email}</a>
+                      </p>
+                    )}
+                    {selected.phone && (
+                      <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink/50">
+                        <Phone size={12} />
+                        <a href={`tel:${selected.phone}`} className="hover:underline">{selected.phone}</a>
+                      </p>
+                    )}
                   </div>
                 </div>
 

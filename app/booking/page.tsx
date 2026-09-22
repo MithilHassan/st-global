@@ -7,13 +7,11 @@ import WorldMapPortArt from "@/components/WorldMapPortArt";
 import {
   PackageIcon,
   FileIcon,
-  PhoneIcon,
   CheckIcon,
   PlaneIcon,
   MapPinIcon,
   UserIcon,
   BuildingIcon,
-  MailIcon,
   ChevronDownIcon,
   ArrowRightIcon,
   ShieldCheckIcon,
@@ -43,43 +41,61 @@ const GOODS_TYPE_OPTIONS = [
   "Personal Effects / Used Goods",
 ];
 
+const DIMENSION_UNITS = ["cm", "in"];
+
 const STEPS = [
   { n: 1, label: "Service", icon: PackageIcon },
   { n: 2, label: "Details", icon: FileIcon },
-  { n: 3, label: "Contact", icon: PhoneIcon },
+  { n: 3, label: "Parties", icon: UserIcon },
   { n: 4, label: "Review", icon: CheckIcon },
 ];
+
+interface DimensionEntry {
+  length: string;
+  width: string;
+  height: string;
+  quantity: string;
+  unit: string;
+}
+
+function blankDimension(): DimensionEntry {
+  return { length: "", width: "", height: "", quantity: "1", unit: "cm" };
+}
 
 type FormState = {
   service: string;
   goodsType: string;
-  specialInstructions: string;
+  commodityDeclaration: string;
   origin: string;
   destination: string;
   grossWeight: string;
   packages: string;
-  dimensions: string;
-  shippingAddress: string;
-  fullName: string;
-  companyName: string;
-  email: string;
-  phone: string;
+  dimensions: DimensionEntry[];
+  volume: string;
+  etd: string;
+  eta: string;
+  manualTrackingNumber: string;
+  shipperName: string;
+  consigneeName: string;
+  billTo: string;
 };
 
 const INITIAL: FormState = {
   service: "",
   goodsType: "",
-  specialInstructions: "",
+  commodityDeclaration: "",
   origin: "",
   destination: "",
   grossWeight: "",
   packages: "1",
-  dimensions: "",
-  shippingAddress: "",
-  fullName: "",
-  companyName: "",
-  email: "",
-  phone: "",
+  dimensions: [blankDimension()],
+  volume: "",
+  etd: "",
+  eta: "",
+  manualTrackingNumber: "",
+  shipperName: "",
+  consigneeName: "",
+  billTo: "",
 };
 
 export default function BookingPage() {
@@ -94,10 +110,30 @@ export default function BookingPage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  function updateDimension(idx: number, field: keyof DimensionEntry, value: string) {
+    setForm((f) => {
+      const dimensions = [...f.dimensions];
+      dimensions[idx] = { ...dimensions[idx], [field]: value };
+      return { ...f, dimensions };
+    });
+  }
+
+  function addDimension() {
+    setForm((f) => ({ ...f, dimensions: [...f.dimensions, blankDimension()] }));
+  }
+
+  function removeDimension(idx: number) {
+    setForm((f) => {
+      if (f.dimensions.length <= 1) return f;
+      return { ...f, dimensions: f.dimensions.filter((_, i) => i !== idx) };
+    });
+  }
+
   function validateStep(current: number): string | null {
     if (current === 1) {
       if (!form.service) return "Please choose a service.";
       if (!form.goodsType) return "Please select the type of goods.";
+      if (!form.commodityDeclaration.trim()) return "Commodity declaration is required.";
     }
     if (current === 2) {
       if (!form.origin.trim()) return "Origin is required.";
@@ -108,10 +144,8 @@ export default function BookingPage() {
         return "Enter at least one package.";
     }
     if (current === 3) {
-      if (!form.fullName.trim()) return "Full name is required.";
-      if (!form.shippingAddress.trim()) return "Shipping address is required.";
-      if (!form.email.trim()) return "Email address is required.";
-      if (!form.phone.trim()) return "Phone number is required.";
+      if (!form.shipperName.trim()) return "Shipper name is required.";
+      if (!form.billTo.trim()) return "Bill to is required.";
     }
     return null;
   }
@@ -137,10 +171,14 @@ export default function BookingPage() {
     setSubmitError(null);
 
     try {
+      const payload = {
+        ...form,
+        dimensions: form.dimensions.filter((d) => d.length || d.width || d.height),
+      };
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => null);
 
@@ -179,7 +217,7 @@ export default function BookingPage() {
             </p>
             <p className="mt-6 text-sm leading-relaxed text-ink/65">
               Save this number — you'll need it to follow your shipment's
-              status. Our team will confirm space and rates by email shortly.
+              status. Our team will confirm space and rates shortly.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link
@@ -216,7 +254,7 @@ export default function BookingPage() {
             Request a shipment booking
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-ink/65">
-            Tell us the cargo and route — we'll confirm space, rates and documentation by email or phone.
+            Tell us the cargo and route — we'll confirm space, rates and documentation.
           </p>
 
           <Stepper current={step} />
@@ -251,13 +289,17 @@ export default function BookingPage() {
                   icon={PackageIcon}
                 />
                 <Field
-                  label="Special Instructions"
-                  value={form.specialInstructions}
-                  onChange={(v) => update("specialInstructions", v)}
-                  placeholder="Any specific requirements…"
+                  label="Commodity Declaration"
+                  required
+                  value={form.commodityDeclaration}
+                  onChange={(v) => update("commodityDeclaration", v)}
+                  placeholder="Describe each item, separated by commas — e.g. Lithium-ion batteries for laptop computers, Stainless steel brake discs"
                   textarea
                   icon={FileIcon}
                 />
+                <p className="-mt-3 text-xs text-ink/45">
+                  Each comma-separated item will appear as its own line on the invoice.
+                </p>
               </div>
             </StepPanel>
           )}
@@ -299,62 +341,133 @@ export default function BookingPage() {
                   icon={PackageIcon}
                 />
                 <Field
-                  label="Dimensions (L x W x H in cm)"
-                  value={form.dimensions}
-                  onChange={(v) => update("dimensions", v)}
-                  placeholder="e.g. 120 x 80 x 100"
-                  className="sm:col-span-2"
+                  label="Volume"
+                  value={form.volume}
+                  onChange={(v) => update("volume", v)}
+                  placeholder="e.g. 2.4 CBM"
+                  icon={PackageIcon}
                 />
+                <Field
+                  label="ETD (Estimated Departure)"
+                  type="date"
+                  value={form.etd}
+                  onChange={(v) => update("etd", v)}
+                  icon={ClockIcon}
+                />
+                <Field
+                  label="ETA (Estimated Arrival)"
+                  type="date"
+                  value={form.eta}
+                  onChange={(v) => update("eta", v)}
+                  icon={ClockIcon}
+                />
+              </div>
+
+              <div className="mt-6">
+                <span className="mb-2 block font-mono text-[11px] uppercase tracking-wide text-royal/80">
+                  Dimensions
+                </span>
+                <div className="space-y-3">
+                  {form.dimensions.map((dim, idx) => (
+                    <div key={idx} className="grid grid-cols-2 gap-2 border border-line bg-white p-3 sm:grid-cols-6">
+                      <input
+                        type="number"
+                        value={dim.length}
+                        onChange={(e) => updateDimension(idx, "length", e.target.value)}
+                        placeholder="Length"
+                        className="border border-line px-2 py-2 text-sm placeholder:text-ink/30 focus:border-royal"
+                      />
+                      <input
+                        type="number"
+                        value={dim.width}
+                        onChange={(e) => updateDimension(idx, "width", e.target.value)}
+                        placeholder="Width"
+                        className="border border-line px-2 py-2 text-sm placeholder:text-ink/30 focus:border-royal"
+                      />
+                      <input
+                        type="number"
+                        value={dim.height}
+                        onChange={(e) => updateDimension(idx, "height", e.target.value)}
+                        placeholder="Height"
+                        className="border border-line px-2 py-2 text-sm placeholder:text-ink/30 focus:border-royal"
+                      />
+                      <input
+                        type="number"
+                        value={dim.quantity}
+                        onChange={(e) => updateDimension(idx, "quantity", e.target.value)}
+                        placeholder="Qty"
+                        className="border border-line px-2 py-2 text-sm placeholder:text-ink/30 focus:border-royal"
+                      />
+                      <select
+                        value={dim.unit}
+                        onChange={(e) => updateDimension(idx, "unit", e.target.value)}
+                        className="border border-line px-2 py-2 text-sm focus:border-royal"
+                      >
+                        {DIMENSION_UNITS.map((u) => (
+                          <option key={u} value={u}>
+                            {u}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => removeDimension(idx)}
+                        disabled={form.dimensions.length <= 1}
+                        className="border border-line px-2 py-2 text-sm text-ink/50 transition-colors hover:border-royal hover:text-royal disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={addDimension}
+                  className="mt-3 border border-line px-4 py-2 font-mono text-[11px] uppercase tracking-wider text-ink/60 transition-colors hover:border-royal hover:text-royal"
+                >
+                  + Add dimension
+                </button>
               </div>
             </StepPanel>
           )}
 
           {step === 3 && (
-            <StepPanel title="Contact Information" subtitle="Who should we confirm space and rates with?" icon={PhoneIcon}>
+            <StepPanel title="Shipper & Consignee" subtitle="Who is sending this, and who should it bill to?" icon={UserIcon}>
               <div className="grid gap-6 sm:grid-cols-2">
                 <Field
-                  label="Full Name"
+                  label="Shipper Name"
                   required
-                  value={form.fullName}
-                  onChange={(v) => update("fullName", v)}
-                  placeholder="Your Name"
+                  value={form.shipperName}
+                  onChange={(v) => update("shipperName", v)}
+                  placeholder="Name of the sender"
                   className="sm:col-span-2"
                   icon={UserIcon}
                 />
                 <Field
-                  label="Company Name"
-                  value={form.companyName}
-                  onChange={(v) => update("companyName", v)}
-                  placeholder="Company Name (Optional)"
+                  label="Consignee Name"
+                  value={form.consigneeName}
+                  onChange={(v) => update("consigneeName", v)}
+                  placeholder="Name of the receiver (Optional)"
                   className="sm:col-span-2"
                   icon={BuildingIcon}
                 />
                 <Field
-                  label="Shipping Address"
+                  label="Bill To"
                   required
                   textarea
-                  value={form.shippingAddress}
-                  onChange={(v) => update("shippingAddress", v)}
-                  placeholder="Street address, city, and any pickup/delivery notes"
+                  value={form.billTo}
+                  onChange={(v) => update("billTo", v)}
+                  placeholder="Billing party's name and address"
                   className="sm:col-span-2"
                   icon={MapPinIcon}
                 />
                 <Field
-                  label="Email Address"
-                  required
-                  type="email"
-                  value={form.email}
-                  onChange={(v) => update("email", v)}
-                  placeholder="email@example.com"
-                  icon={MailIcon}
-                />
-                <Field
-                  label="Phone Number"
-                  required
-                  value={form.phone}
-                  onChange={(v) => update("phone", v)}
-                  placeholder="+880 …"
-                  icon={PhoneIcon}
+                  label="Manual Tracking Number"
+                  value={form.manualTrackingNumber}
+                  onChange={(v) => update("manualTrackingNumber", v)}
+                  placeholder="Leave blank to auto-generate one"
+                  className="sm:col-span-2"
+                  icon={FileIcon}
                 />
               </div>
             </StepPanel>
@@ -366,17 +479,27 @@ export default function BookingPage() {
                 {[
                   ["Service", form.service],
                   ["Type of goods", form.goodsType],
-                  ["Special instructions", form.specialInstructions || "—"],
+                  ["Commodity declaration", form.commodityDeclaration],
                   ["Origin", form.origin],
                   ["Destination", form.destination],
                   ["Gross weight", `${form.grossWeight} kg`],
                   ["Number of packages", form.packages],
-                  ["Dimensions", form.dimensions || "—"],
-                  ["Full name", form.fullName],
-                  ["Company", form.companyName || "—"],
-                  ["Shipping address", form.shippingAddress],
-                  ["Email", form.email],
-                  ["Phone", form.phone],
+                  [
+                    "Dimensions",
+                    form.dimensions.some((d) => d.length || d.width || d.height)
+                      ? form.dimensions
+                          .filter((d) => d.length || d.width || d.height)
+                          .map((d) => `${d.length || "—"}x${d.width || "—"}x${d.height || "—"} ${d.unit} (x${d.quantity || 1})`)
+                          .join(", ")
+                      : "—",
+                  ],
+                  ["Volume", form.volume || "—"],
+                  ["ETD", form.etd || "—"],
+                  ["ETA", form.eta || "—"],
+                  ["Shipper name", form.shipperName],
+                  ["Consignee name", form.consigneeName || "—"],
+                  ["Bill to", form.billTo],
+                  ["Manual tracking number", form.manualTrackingNumber || "— (auto-generated)"],
                 ].map(([label, value], i) => (
                   <div
                     key={label}

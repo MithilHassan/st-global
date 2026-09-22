@@ -26,7 +26,7 @@ interface OverviewBooking {
   origin: string;
   destination: string;
   shipper_name: string;
-  shipper_company: string | null;
+  consignee_name: string | null;
   created_at: string;
   booking_events?: { status: string; occurred_at: string }[];
 }
@@ -182,7 +182,7 @@ export default function AdminOverview() {
               <p className="mt-1 font-display text-3xl font-semibold">{stats.activeShipments}</p>
               <p className="mt-1 text-[11px] text-ink/50">Not yet delivered</p>
             </div>
-            <div className="border border-line bg-white px-5 py-4">
+            <Link href="/admin/invoices" className="border border-line bg-white px-5 py-4 transition-colors hover:border-royal/40">
               <div className="flex items-start justify-between gap-2">
                 <p className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Total invoiced</p>
                 <span className="flex h-8 w-8 items-center justify-center bg-teal/10">
@@ -191,7 +191,7 @@ export default function AdminOverview() {
               </div>
               <p className="mt-1 font-display text-3xl font-semibold">{formatUSD(stats.totalInvoiced)}</p>
               <p className="mt-1 text-[11px] text-ink/50">Across {invoices.length} invoice{invoices.length === 1 ? "" : "s"}</p>
-            </div>
+            </Link>
             <div className="border border-line bg-white px-5 py-4">
               <div className="flex items-start justify-between gap-2">
                 <p className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Outstanding balance</p>

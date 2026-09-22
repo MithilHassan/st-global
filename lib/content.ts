@@ -70,6 +70,19 @@ export interface SocialLinks {
   facebook: string;
 }
 
+export interface GalleryImage {
+  url: string;
+  /** Storage path, needed to delete the file later — not shown publicly. */
+  path: string;
+  caption: string;
+}
+
+export interface GalleryContent {
+  heading: string;
+  intro: string;
+  images: GalleryImage[];
+}
+
 export interface SiteContent {
   hero: HeroContent;
   stats: StatItem[];
@@ -78,6 +91,7 @@ export interface SiteContent {
   contacts: ContactsContent;
   footer: FooterContent;
   social: SocialLinks;
+  gallery: GalleryContent;
 }
 
 // Exactly what's hardcoded on the homepage today, so the site renders
@@ -186,6 +200,12 @@ export const DEFAULT_CONTENT: SiteContent = {
     instagram: "#",
     linkedin: "#",
     facebook: "#",
+  },
+  gallery: {
+    heading: "A look at our operations",
+    intro:
+      "Our warehouses, offices, and team at work across Dhaka and Chittagong.",
+    images: [],
   },
 };
 

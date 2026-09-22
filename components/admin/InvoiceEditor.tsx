@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import type { Invoice, InvoiceLineItem } from "@/lib/types";
-import { blankLineItem, blankChallanItem, numberToWordsUSD } from "@/lib/types";
+import type { Invoice, InvoiceLineItem, ChallanItem } from "@/lib/types";
+import { blankLineItem, blankChallanItem, numberToWordsCurrency, CURRENCIES } from "@/lib/types";
 
 interface Props {
   invoiceId: string;
@@ -136,7 +136,8 @@ export default function InvoiceEditor({ invoiceId }: Props) {
           // auto-syncing it) if it doesn't match what auto-fill would have
           // produced for the invoice's current total.
           wordsCustomizedRef.current =
-            !!json.invoice.in_words && json.invoice.in_words !== numberToWordsUSD(loadedTotal);
+            !!json.invoice.in_words &&
+            json.invoice.in_words !== numberToWordsCurrency(loadedTotal, json.invoice.currency || "USD");
         }
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : "Failed to load invoice.");
@@ -161,45 +162,26 @@ export default function InvoiceEditor({ invoiceId }: Props) {
   }, [isDirty]);
 
   // ── Auto-generate "in words" while it hasn't been customized ──
-  // Keeps the words in sync with the total every time a price changes —
-  // previously it only ever synced once (while the field was still
-  // empty/"Zero Dollars Only"), so editing a price after that first fill
-  // left the words stuck on the old amount.
+  // Keeps the words in sync with the total (and currency) every time
+  // either changes — previously it only ever synced once (while the
+  // field was still empty/"Zero Dollars Only"), so editing a price after
+  // that first fill left the words stuck on the old amount.
   useEffect(() => {
     if (!data) return;
     if (wordsCustomizedRef.current) return;
-    const words = numberToWordsUSD(total);
+    const words = numberToWordsCurrency(total, data.currency || "USD");
     if (words !== data.in_words) setData((d) => (d ? { ...d, in_words: words } : d));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total]);
+  }, [total, data?.currency]);
 
   // ── Challan fields that mirror the invoice ──────────────────
   // These are pure derivations of other invoice fields (no separate
   // state, no effects, no "customized" escape hatch) so any edit to the
   // invoice shows up in the challan on the very next render — always,
-  // with no way for the two to drift apart. Only Contact No. and the
-  // Weight/Remark columns (per row, beyond what's derived below) have no
-  // invoice equivalent, so those stay independently editable.
+  // with no way for the two to drift apart.
   const challanNo = data?.hbl_no ?? "";
   const challanDate = data?.invoice_date ?? "";
-  const challanName = data?.shipper ?? "";
   const challanAddress = data?.bill_to ?? "";
-
-  // Challan rows mirror the invoice's line items 1:1 — add/remove a line
-  // item on the invoice above and the challan's row list follows
-  // immediately, same as everything else here. Description and Qty
-  // always come from the matching line item; Weight (row 1 only, from
-  // the invoice's overall Weight field) and Remark have no per-line
-  // source, so those two stay independently editable per row.
-  const challanRows = (data?.line_items ?? []).map((li, i) => {
-    const stored = data?.challan_items?.[i];
-    return {
-      description: li.description,
-      qty: String(li.unit),
-      weight: i === 0 ? (data?.weight != null ? `${data.weight} kg` : "") : stored?.weight ?? "",
-      remark: stored?.remark ?? "",
-    };
-  });
 
   // ── Toast auto-dismiss ─────────────────────────────────────
   useEffect(() => {
@@ -233,18 +215,25 @@ export default function InvoiceEditor({ invoiceId }: Props) {
     });
   };
 
-  // Sets Weight or Remark for challan row `idx` — Description/Qty aren't
-  // editable here since they always mirror the matching invoice line
-  // item (see challanRows above). Pads the underlying array so the
-  // write always lands, even on a row that only just appeared because a
-  // line item was added.
-  const updateChallanItem = (idx: number, field: "weight" | "remark", value: string) => {
+  // ── Challan items — fully manual, not derived from the invoice's
+  // line items. Staff adds/removes/edits every row themselves. ──
+  const updateChallanItem = (idx: number, field: keyof ChallanItem, value: string) => {
     setData((d) => {
       if (!d) return d;
       const items = [...(d.challan_items ?? [])];
-      while (items.length <= idx) items.push(blankChallanItem());
       items[idx] = { ...items[idx], [field]: value };
       return { ...d, challan_items: items };
+    });
+  };
+
+  const addChallanItem = () => {
+    setData((d) => (d ? { ...d, challan_items: [...(d.challan_items ?? []), blankChallanItem()] } : d));
+  };
+
+  const removeChallanItem = (idx: number) => {
+    setData((d) => {
+      if (!d || (d.challan_items ?? []).length <= 1) return d;
+      return { ...d, challan_items: d.challan_items.filter((_, i) => i !== idx) };
     });
   };
 
@@ -266,19 +255,17 @@ export default function InvoiceEditor({ invoiceId }: Props) {
 
     setSaving(true);
     try {
-      // Challan No./Date/Name/Address and every row's Description/Qty
-      // are pure derivations of other invoice fields on screen (see
-      // challanNo/challanRows above) — make sure what actually gets
-      // saved matches what's currently displayed, rather than whatever
-      // stale copy might still be sitting in state.
+      // Challan No./Date/Name/Address are pure derivations of other
+      // invoice fields on screen (see challanNo etc. above) — make sure
+      // what actually gets saved matches what's currently displayed,
+      // rather than whatever stale copy might still be sitting in state.
+      // Challan items are fully manual and already live in data.challan_items.
       const payload = {
         ...data,
         paid: Number(data.paid) || 0,
         challan_no: challanNo,
         challan_date: challanDate,
-        challan_name: challanName,
         challan_address: challanAddress,
-        challan_items: challanRows,
       };
       const res = await fetch(`/api/admin/invoices/${data.id}`, {
         method: "PUT",
@@ -349,6 +336,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
             .inv-footer { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; font-weight: bold; }
             .inv-line-item-row td { padding: 4px 5px; vertical-align: middle; font-size: 13px; }
             .no-print { display: none !important; }
+            .print-only { display: inline !important; }
             .inv-field { display: inline-block; }
             .inv-field-editing { border: none; background: transparent; outline: none; box-shadow: none; width: 100%; font-family: inherit; font-size: inherit; }
             .challan-section { page-break-before: always; margin-top: 0; padding-top: 10px; }
@@ -415,10 +403,10 @@ export default function InvoiceEditor({ invoiceId }: Props) {
           {loadError ?? "Invoice not found."}
         </p>
         <button
-          onClick={() => router.push("/admin")}
+          onClick={() => router.push("/admin/invoices")}
           className="mt-4 border border-line px-4 py-2 font-mono text-[11px] uppercase tracking-wider"
         >
-          Back to bookings
+          Back to invoices
         </button>
       </div>
     );
@@ -438,8 +426,8 @@ export default function InvoiceEditor({ invoiceId }: Props) {
       {/* ── Toolbar (hidden in print) ─────────────────────── */}
       <div className="inv-toolbar no-print">
         <div className="inv-toolbar-left">
-          <button className="btn btn-secondary btn-sm" onClick={() => router.push("/admin")}>
-            ← Back to Bookings
+          <button className="btn btn-secondary btn-sm" onClick={() => router.push("/admin/invoices")}>
+            ← Back to Invoices
           </button>
           {isDirty && <span className="inv-unsaved-badge">● Unsaved changes</span>}
         </div>
@@ -522,7 +510,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
               <td className="inv-bill-to-label">
                 Bill To:
                 <br />
-                <span style={{ fontWeight: "normal", fontSize: 13, display: "inline-block", marginTop: 10 }}>
+                <span style={{ fontWeight: "normal", fontSize: 13, marginTop: 10 }}>
                   <EditableField
                     value={data.bill_to}
                     onChange={(v) => updateField("bill_to", String(v))}
@@ -584,15 +572,16 @@ export default function InvoiceEditor({ invoiceId }: Props) {
         <table className="inv-table inv-details-header" style={{ marginTop: 15 }}>
           <tbody>
             <tr>
-              <td style={{ width: "8%" }}>Rep</td>
-              <td style={{ width: "10%" }}>Terms</td>
-              <td style={{ width: "10%" }}>Exch Rate</td>
-              <td style={{ width: "18%" }}>Truck Callan No.</td>
-              <td style={{ width: "16%" }}>HBL No.</td>
+              <td style={{ width: "7%" }}>Rep</td>
+              <td style={{ width: "9%" }}>Terms</td>
+              <td style={{ width: "9%" }}>Exch Rate</td>
+              <td style={{ width: "15%" }}>Truck Challan / MBL / MAWB No.</td>
+              <td style={{ width: "14%" }}>HBL / HAWB No.</td>
               <td style={{ width: "6%" }}>Pkgs</td>
-              <td style={{ width: "12%" }}>ETD</td>
-              <td style={{ width: "12%" }}>ETA</td>
+              <td style={{ width: "11%" }}>ETD</td>
+              <td style={{ width: "11%" }}>ETA</td>
               <td style={{ width: "8%" }}>Weight</td>
+              <td style={{ width: "10%" }}>Volume</td>
             </tr>
             <tr className="inv-details-values">
               <td>
@@ -633,19 +622,36 @@ export default function InvoiceEditor({ invoiceId }: Props) {
                   type="number"
                 />
               </td>
+              <td>
+                <EditableField value={data.volume} onChange={(v) => updateField("volume", String(v))} />
+              </td>
             </tr>
           </tbody>
         </table>
 
         {/* ── LINE ITEMS TABLE ────────────────────────────── */}
-        <table className="inv-table inv-main-data" style={{ marginTop: 15 }}>
+        <div className="no-print" style={{ marginTop: 15, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+          <label style={{ fontSize: 11, fontWeight: "bold", color: "#666" }}>Currency</label>
+          <select
+            value={data.currency || "USD"}
+            onChange={(e) => updateField("currency", e.target.value)}
+            style={{ border: "1px solid #ccc", padding: "4px 8px", fontSize: 12, maxWidth: 220 }}
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} — {c.majorUnit} ({c.symbol})
+              </option>
+            ))}
+          </select>
+        </div>
+        <table className="inv-table inv-main-data" style={{ marginTop: 6 }}>
           <thead>
             <tr>
               <th style={{ width: "6%" }}>S/N</th>
               <th style={{ width: "42%" }}>Description</th>
               <th style={{ width: "12%" }}>Unit</th>
-              <th style={{ width: "14%" }}>Unit Price(USD)</th>
-              <th style={{ width: "14%" }}>Amount(USD)</th>
+              <th style={{ width: "14%" }}>Unit Price({data.currency || "USD"})</th>
+              <th style={{ width: "14%" }}>Amount({data.currency || "USD"})</th>
               <th style={{ width: "12%" }} className="no-print">
                 Actions
               </th>
@@ -720,7 +726,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
                 />
               </td>
               <td style={{ padding: 5, textAlign: "center", fontSize: 11 }}>For Customer</td>
-              <td style={{ padding: 5, textAlign: "right", fontWeight: "bold" }}>Total</td>
+              <td style={{ padding: 5, textAlign: "right", fontWeight: "bold" }}>Total ({data.currency || "USD"})</td>
               <td style={{ padding: 5, textAlign: "right", fontWeight: "bold" }}>{total.toFixed(2)}</td>
               <td className="no-print"></td>
             </tr>
@@ -728,14 +734,37 @@ export default function InvoiceEditor({ invoiceId }: Props) {
               <td rowSpan={2} style={{ padding: 5, textAlign: "center", verticalAlign: "middle", fontSize: 11 }}>
                 Thanks for the business
               </td>
-              <td style={{ padding: 5, textAlign: "right", fontWeight: "bold" }}>Paid</td>
+              <td style={{ padding: 5, textAlign: "right", fontWeight: "bold" }}>Paid ({data.currency || "USD"})</td>
               <td style={{ padding: 5, textAlign: "right", fontWeight: "bold" }}>
                 <EditableField value={data.paid} onChange={(v) => updateField("paid", Number(v))} type="number" />
               </td>
               <td className="no-print"></td>
             </tr>
             <tr>
-              <td style={{ padding: 5, textAlign: "right", fontWeight: "bold" }}>Balance</td>
+              <td style={{ padding: 5, textAlign: "right", fontWeight: "bold" }}>
+                <select
+                  className="no-print"
+                  value={data.balance_type || "due"}
+                  onChange={(e) => updateField("balance_type", e.target.value)}
+                  style={{
+                    border: "1px solid #ccc",
+                    padding: "3px 6px",
+                    fontSize: 13,
+                    fontWeight: "bold",
+                    fontFamily: "inherit",
+                    background: "white",
+                  }}
+                >
+                  <option value="due">Due</option>
+                  <option value="discount">Discount</option>
+                </select>
+                {/* Selects don't survive the print clone (their selected
+                    option is only tracked as a live DOM property, not
+                    reflected in innerHTML) — this plain-text span is
+                    what actually shows up on the printed page. */}
+                <span className="print-only">{data.balance_type === "discount" ? "Discount" : "Due"}</span>
+                {" "}({data.currency || "USD"})
+              </td>
               <td style={{ padding: 5, textAlign: "right", fontWeight: "bold" }}>{balance.toFixed(2)}</td>
               <td className="no-print"></td>
             </tr>
@@ -835,32 +864,33 @@ export default function InvoiceEditor({ invoiceId }: Props) {
           </table>
 
           <p className="no-print" style={{ margin: "6px 0 0", fontSize: 10, color: "#888" }}>
-            Challan No., Date, Name, Address, and every row's Description/Qty always match the invoice above — add,
-            remove or edit line items there to update the challan. Only Weight (row 1) and Remark stay editable
-            here.
+            Challan No., Date and Bill To always match the invoice's HBL No., Invoice Date and Bill To above — edit
+            those fields to update the challan. Items below are entered and maintained manually.
           </p>
 
           <table className="inv-table" style={{ marginTop: -1 }}>
             <tbody>
               <tr>
-                <td style={{ width: "18%", padding: "3px 5px", fontWeight: "bold" }}>Name</td>
-                <td style={{ padding: "3px 5px" }}>
-                  <EditableField value={challanName} readOnly />
-                </td>
-              </tr>
-              <tr>
-                <td style={{ padding: "3px 5px", fontWeight: "bold" }}>Address</td>
-                <td style={{ padding: "3px 5px" }}>
-                  <EditableField value={challanAddress} readOnly />
-                </td>
-              </tr>
-              <tr>
-                <td style={{ padding: "3px 5px", fontWeight: "bold" }}>Contact No.</td>
-                <td style={{ padding: "3px 5px" }}>
-                  <EditableField
-                    value={data.challan_contact}
-                    onChange={(v) => updateField("challan_contact", String(v))}
-                  />
+                <td style={{ padding: 0 }}>
+                  {/* A real <textarea> here would silently print blank —
+                      this app's Print button clones innerHTML, and a
+                      textarea's live value isn't reflected there. A
+                      styled div gets the same look with none of that risk. */}
+                  <div
+                    style={{
+                      width: "100%",
+                      minHeight: 112,
+                      padding: "6px 8px",
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <p style={{ padding: "3px 5px", fontWeight: "bold" }}>Bill To:</p>
+                    {challanAddress || "—"}
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -870,27 +900,33 @@ export default function InvoiceEditor({ invoiceId }: Props) {
             <thead>
               <tr>
                 <th style={{ width: "8%" }}>SL No.</th>
-                <th style={{ width: "44%" }}>Description</th>
+                <th style={{ width: "42%" }}>Description</th>
                 <th style={{ width: "13%" }}>Qty</th>
                 <th style={{ width: "13%" }}>Weight</th>
-                <th style={{ width: "22%" }}>Remark</th>
+                <th style={{ width: "16%" }}>Remark</th>
+                <th className="no-print" style={{ width: "8%" }}></th>
               </tr>
             </thead>
             <tbody>
-              {challanRows.map((item, idx) => (
+              {(data.challan_items ?? []).map((item, idx) => (
                 <tr key={idx} className="inv-line-item-row">
                   <td style={{ textAlign: "center" }}>{idx + 1}</td>
                   <td>
-                    <EditableField value={item.description} readOnly />
+                    <EditableField
+                      value={item.description}
+                      onChange={(v) => updateChallanItem(idx, "description", String(v))}
+                    />
                   </td>
                   <td style={{ textAlign: "center" }}>
-                    <EditableField value={item.qty} readOnly />
+                    <EditableField
+                      value={item.qty}
+                      onChange={(v) => updateChallanItem(idx, "qty", String(v))}
+                    />
                   </td>
                   <td style={{ textAlign: "center" }}>
                     <EditableField
                       value={item.weight}
                       onChange={(v) => updateChallanItem(idx, "weight", String(v))}
-                      readOnly={idx === 0}
                     />
                   </td>
                   <td>
@@ -899,10 +935,22 @@ export default function InvoiceEditor({ invoiceId }: Props) {
                       onChange={(v) => updateChallanItem(idx, "remark", String(v))}
                     />
                   </td>
+                  <td className="no-print" style={{ textAlign: "center" }}>
+                    <button
+                      className="inv-row-btn inv-row-btn-del"
+                      onClick={() => removeChallanItem(idx)}
+                      disabled={(data.challan_items ?? []).length <= 1}
+                    >
+                      ✕
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <button className="inv-row-btn inv-row-btn-add no-print" style={{ marginTop: 6 }} onClick={addChallanItem}>
+            + Add row
+          </button>
 
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 60 }}>
             <div style={{ textAlign: "center", fontSize: 12, fontWeight: "bold" }}>
@@ -1173,6 +1221,9 @@ export default function InvoiceEditor({ invoiceId }: Props) {
           margin-top: 48px;
           border-top: 2px dashed #ccc;
           padding-top: 32px;
+        }
+        .print-only {
+          display: none;
         }
       `}</style>
     </div>

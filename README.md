@@ -22,8 +22,10 @@ Next.js 14 (App Router) + Tailwind CSS site built from the company profile docum
      `supabase/migrations/007_site_content.sql` (adds the `site_content`
      table behind the homepage CMS — see "Content (CMS)" below), and
      `supabase/migrations/008_challan.sql` (adds delivery-challan fields
-     to each invoice — see "Challan" below). All are additive and safe to
-     re-run.
+     to each invoice — see "Challan" below), `supabase/migrations/009_shipping_address.sql`,
+     and `supabase/migrations/010_booking_form_overhaul.sql` (the booking
+     form's current field set — see "Booking form fields" below). All are
+     additive and safe to re-run.
 3. Copy `.env.local.example` to `.env.local` and fill in your project's
    URL, anon key, service role key, and an admin password + session
    secret (Project Settings → API for the first three).
@@ -79,8 +81,14 @@ extra dependency, no native bindings, never stored in plain text.
 
 ## Content (CMS)
 
-Settings → **Content** in `/admin` lets staff edit the homepage's actual
-business content without touching code:
+**Super admins only** — the Content page and its nav link are hidden
+entirely for regular named admins, and the underlying API routes
+(`/api/admin/content*`) reject them with a 403 even if called directly.
+The shared/master password is always treated as super admin, same as the
+"Admin users" restriction in Settings.
+
+Settings → **Content** in `/admin` lets super admins edit the homepage's
+actual business content without touching code:
 
 - **Hero** — headline, subheadline, button labels, and a background photo
   upload (replaces the default illustration; JPG/PNG/WEBP/GIF, up to 8MB)
@@ -93,6 +101,9 @@ business content without touching code:
   copyright line
 - **Social media** — the 4 icon links in the header's top bar (Twitter/X,
   Instagram, LinkedIn, Facebook); leaving one blank hides that icon
+- **Photo gallery** — heading, intro, and a full photo library (upload
+  multiple at once, per-photo caption, delete) powering the public
+  `/gallery` page
 
 Content lives in the `site_content` table (`lib/content.ts`), one JSON
 block per section. Most blocks are read directly by the homepage server
@@ -101,16 +112,18 @@ component at render time. The **social links** are the one exception —
 fetches them itself from a small public, unauthenticated endpoint
 (`GET /api/content/social`) rather than via props; that data isn't
 sensitive, it's the same links already visible in the page. The homepage
-is statically generated for speed; saving a block calls
-`revalidatePath("/")` so the change is live on the next page load instead
-of waiting for a redeploy.
+and gallery page are both statically generated for speed; saving a block
+calls `revalidatePath("/")` and `revalidatePath("/gallery")` so the
+change is live on the next page load instead of waiting for a redeploy.
 
 **Hero image uploads** use Supabase Storage (`lib/storage.ts`) — a
 `site-assets` bucket is created automatically (public, 8MB file-size
 limit) on first upload via the same service-role client already used
 everywhere else, so no manual dashboard setup is required beyond having
-`SUPABASE_SERVICE_ROLE_KEY` set. Re-uploading overwrites the same file
-path rather than accumulating orphaned images.
+`SUPABASE_SERVICE_ROLE_KEY` set. Re-uploading the hero image overwrites
+the same file path (one hero photo at a time); gallery photos each get
+their own unique path instead, since those are meant to accumulate, and
+removing one from the admin page deletes its file from storage too.
 Every block falls back to sensible defaults (matching what was
 originally hardcoded) if the table is empty or unreachable, so the site
 never breaks because of this.
@@ -120,6 +133,17 @@ risk: the full service manifest list, the air/ocean feature blocks (body
 copy + carrier tag lists + photos), and the carrier code lists. Those
 change far less often and touch images/layout more than plain text —
 happy to add editing for any of them on request.
+
+## Invoices index
+
+`/admin/invoices` — a standalone list of every invoice, since previously
+they were only reachable by drilling into a specific booking or the
+Dashboard's link. Shows Paid/Due/Discount status (derived from `paid` vs.
+the line-items total, using `balance_type` to tell a written-off
+"Discount" apart from money still owed), with search, status filter,
+sort, CSV export, and bulk "mark as paid" (sets `paid` to the invoice's
+full total in one call per selected invoice). No new migration — reuses
+the `currency` and `balance_type` columns already added.
 
 ## Challan
 
@@ -142,27 +166,49 @@ right after the invoice. In `components/admin/InvoiceEditor.tsx`:
   documents together, since they share the same save button and API
   call.
 - Auto-filled from the booking when an invoice is first generated (name,
-  contact, cargo description, packages, weight), same as the rest of the
-  invoice's prefill — editable afterward like everything else.
+  cargo description, packages, weight) — Contact No. starts blank since
+  the booking form no longer collects a phone number, and stays editable
+  like everything else.
+
+## Booking form fields (as of the October 2026 overhaul)
+
+The booking wizard no longer collects an email or phone number at all —
+those fields were removed from the form. Instead it now collects:
+**Commodity Declaration** (comma-separated; each item becomes its own
+invoice line item when an invoice is generated), **multiple structured
+Dimensions** (add/remove rows, each with length/width/height/qty/unit),
+**Volume**, **Manual Tracking Number** (optional — if given, it's used
+*as* the actual tracking number instead of an auto-generated one, so it
+shows up everywhere a tracking number would: the tracking page, admin
+list, invoice's HBL No., etc.), **ETD**/**ETA**, and **Shipper Name** /
+**Consignee Name** / **Bill To** (renamed from Full Name / Company /
+Shipping Address, and kept as three genuinely separate fields — Bill To
+is not assumed to be the shipper's own address).
+
+`bookings.shipper_email` and `shipper_phone` are still real, nullable
+columns — nothing was dropped — they're just never populated by the
+public form anymore. Staff can still set them later via the booking-edit
+API if a customer provides contact info some other way (a phone call,
+say), and status-update emails will start working for that booking from
+then on. See `supabase/migrations/010_booking_form_overhaul.sql`.
 
 ## Booking confirmation emails
 
 When a customer submits the booking wizard, the browser posts the form to
-`app/api/bookings`, a server route that:
+`app/api/bookings`, a server route that calls `create_booking(...)` via
+the Supabase **service role** client (same trust boundary as the admin
+routes) to insert the booking and generate the tracking number.
 
-1. Calls `create_booking(...)` via the Supabase **service role** client
-   (same trust boundary as the admin routes) to insert the booking and
-   generate the tracking number.
-2. Emails the customer a confirmation (tracking number + booking summary)
-   over SMTP, using `lib/email.ts` / `nodemailer`.
-
-Booking creation and email sending are decoupled: if the email fails to
-send (bad credentials, provider outage, etc.) the booking is **not**
-rolled back — the customer still gets their tracking number on-screen and
-the failure is only logged server-side (`emailSent: false` in the API
-response). Configure SMTP via the `SMTP_*` / `EMAIL_FROM` /
-`ADMIN_NOTIFICATION_EMAIL` / `NEXT_PUBLIC_SITE_URL` variables in
-`.env.local.example`:
+**No confirmation email is sent for bookings created from the public
+form** — there's no email field to send one to anymore (see "Booking form
+fields" above). `lib/email.ts`'s `sendBookingConfirmationEmail` still
+exists and works; it's just never called from this route now. If you
+want confirmation emails back, the fastest path is re-adding an email
+field to the form and wiring this route's now-dormant email call back up.
+**Status-update emails still work exactly as before** for any booking
+that does have an email on file — Configure SMTP via the `SMTP_*` /
+`EMAIL_FROM` / `ADMIN_NOTIFICATION_EMAIL` / `NEXT_PUBLIC_SITE_URL`
+variables in `.env.local.example`:
 
 - Gmail: use an [App Password](https://myaccount.google.com/apppasswords)
   (not your normal password), `smtp.gmail.com`, port `587`.

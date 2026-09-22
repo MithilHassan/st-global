@@ -15,6 +15,7 @@ import {
   Weight,
   Ruler,
   MapPin,
+  Clock,
   MoreVertical,
   Copy,
   FileText,
@@ -30,6 +31,14 @@ interface AdminBookingEvent {
   occurred_at: string;
 }
 
+interface DimensionEntry {
+  length: string;
+  width: string;
+  height: string;
+  quantity: string;
+  unit: string;
+}
+
 interface AdminBooking {
   id: string;
   tracking_number: string;
@@ -39,20 +48,31 @@ interface AdminBooking {
   destination: string;
   service_type: string | null;
   goods_type: string | null;
+  commodity_declaration: string | null;
   shipper_name: string;
-  shipper_company: string | null;
-  shipper_email: string;
-  shipper_phone: string;
+  shipper_email: string | null;
+  shipper_phone: string | null;
+  consignee_name: string | null;
+  bill_to: string | null;
   weight_kg: number | null;
   packages: number | null;
-  dimensions: string | null;
-  shipping_address: string | null;
+  volume: string | null;
+  dimensions_list: DimensionEntry[] | null;
+  etd: string | null;
+  eta: string | null;
   notes: string | null;
   created_at: string;
   booking_events: AdminBookingEvent[];
 }
 
 const PAGE_SIZE = 8;
+
+function formatDimensions(list: DimensionEntry[] | null | undefined): string {
+  if (!list || list.length === 0) return "";
+  return list
+    .map((d) => `${d.length || "—"}x${d.width || "—"}x${d.height || "—"} ${d.unit || "cm"} (x${d.quantity || 1})`)
+    .join(", ");
+}
 
 // Read-only progress display for the current status — all six stages
 // shown at once with the reached ones filled in, plus the time the
@@ -177,8 +197,8 @@ export default function AdminDashboard() {
         const haystack = [
           b.tracking_number,
           b.shipper_name,
-          b.shipper_company,
-          b.shipper_email,
+          b.consignee_name,
+          b.bill_to,
           b.origin,
           b.destination,
         ]
@@ -329,15 +349,15 @@ export default function AdminDashboard() {
   function handleExportCsv() {
     if (!filteredBookings || filteredBookings.length === 0) return;
     const headers = [
-      "Tracking number", "Status", "Mode", "Service", "Goods type", "Origin", "Destination",
-      "Shipper name", "Company", "Email", "Phone", "Weight (kg)", "Packages", "Dimensions", "Shipping address", "Notes", "Created at",
+      "Tracking number", "Status", "Mode", "Service", "Goods type", "Commodity declaration", "Origin", "Destination",
+      "Shipper name", "Consignee name", "Bill to", "Weight (kg)", "Packages", "Volume", "Dimensions", "ETD", "ETA", "Notes", "Created at",
     ];
     const escapeCsv = (value: string) => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
     const rows = filteredBookings.map((b) => [
-      b.tracking_number, stageLabel(b.status), b.mode, b.service_type ?? "", b.goods_type ?? "",
-      b.origin, b.destination, b.shipper_name, b.shipper_company ?? "", b.shipper_email, b.shipper_phone,
+      b.tracking_number, stageLabel(b.status), b.mode, b.service_type ?? "", b.goods_type ?? "", b.commodity_declaration ?? "",
+      b.origin, b.destination, b.shipper_name, b.consignee_name ?? "", b.bill_to ?? "",
       b.weight_kg != null ? String(b.weight_kg) : "", b.packages != null ? String(b.packages) : "",
-      b.dimensions ?? "", b.shipping_address ?? "", b.notes ?? "", b.created_at,
+      b.volume ?? "", formatDimensions(b.dimensions_list), b.etd ?? "", b.eta ?? "", b.notes ?? "", b.created_at,
     ]);
     const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -582,7 +602,7 @@ export default function AdminDashboard() {
                           <div className="mt-2 flex items-center justify-between gap-2">
                             <span className="min-w-0 truncate text-xs text-ink/50">
                               {b.shipper_name}
-                              {b.shipper_company ? ` · ${b.shipper_company}` : ""}
+                              {b.consignee_name ? ` · ${b.consignee_name}` : ""}
                             </span>
                             <StatusPill status={b.status} />
                           </div>
@@ -682,12 +702,14 @@ export default function AdminDashboard() {
                             >
                               <Copy size={13} /> Copy tracking number
                             </button>
-                            <button
-                              onClick={() => handleCopy(selected.shipper_email, "Customer email")}
-                              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs text-ink/70 hover:bg-paperdim"
-                            >
-                              <Copy size={13} /> Copy customer email
-                            </button>
+                            {selected.shipper_email && (
+                              <button
+                                onClick={() => handleCopy(selected.shipper_email as string, "Customer email")}
+                                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs text-ink/70 hover:bg-paperdim"
+                              >
+                                <Copy size={13} /> Copy customer email
+                              </button>
+                            )}
                             <button
                               onClick={handleDeleteBooking}
                               disabled={deletingBooking}
@@ -706,14 +728,26 @@ export default function AdminDashboard() {
                     <IconDetail icon={selected.mode === "air" ? Plane : Ship} label="Service" value={selected.service_type ?? "—"} />
                     <IconDetail icon={Package} label="Goods type" value={selected.goods_type ?? "—"} />
                     <IconDetail icon={User} label="Shipper" value={selected.shipper_name} />
-                    <IconDetail icon={Building2} label="Company" value={selected.shipper_company ?? "—"} />
-                    <IconDetail icon={Mail} label="Email" value={selected.shipper_email} />
-                    <IconDetail icon={Phone} label="Phone" value={selected.shipper_phone} />
+                    <IconDetail icon={Building2} label="Consignee" value={selected.consignee_name ?? "—"} />
                     <IconDetail icon={Weight} label="Weight" value={selected.weight_kg ? `${selected.weight_kg} kg` : "—"} />
                     <IconDetail icon={Boxes} label="Packages" value={selected.packages ? String(selected.packages) : "—"} />
-                    <IconDetail icon={Ruler} label="Dimensions" value={selected.dimensions ?? "—"} />
-                    <IconDetail icon={MapPin} label="Shipping address" value={selected.shipping_address ?? "—"} />
+                    <IconDetail icon={Ruler} label="Volume" value={selected.volume ?? "—"} />
+                    <IconDetail icon={Ruler} label="Dimensions" value={formatDimensions(selected.dimensions_list) || "—"} />
+                    <IconDetail icon={Clock} label="ETD" value={selected.etd ?? "—"} />
+                    <IconDetail icon={Clock} label="ETA" value={selected.eta ?? "—"} />
+                    <IconDetail icon={MapPin} label="Bill to" value={selected.bill_to ?? "—"} />
+                    {selected.shipper_email && <IconDetail icon={Mail} label="Email" value={selected.shipper_email} />}
+                    {selected.shipper_phone && <IconDetail icon={Phone} label="Phone" value={selected.shipper_phone} />}
                   </dl>
+
+                  {selected.commodity_declaration && (
+                    <p className="mt-4 border border-line bg-paper px-3 py-2 text-xs text-ink/70">
+                      <span className="mb-1 block font-mono text-[10px] uppercase tracking-wide text-ink/40">
+                        Commodity declaration
+                      </span>
+                      {selected.commodity_declaration}
+                    </p>
+                  )}
 
                   {selected.notes && (
                     <p className="mt-4 border border-line bg-paper px-3 py-2 text-xs text-ink/70">{selected.notes}</p>

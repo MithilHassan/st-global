@@ -1,23 +1,32 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
-import { sendBookingConfirmationEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
+
+interface DimensionEntry {
+  length?: string;
+  width?: string;
+  height?: string;
+  quantity?: string;
+  unit?: string;
+}
 
 interface BookingRequestBody {
   service?: string;
   goodsType?: string;
-  specialInstructions?: string | null;
+  commodityDeclaration?: string;
   origin?: string;
   destination?: string;
   grossWeight?: string;
   packages?: string;
-  dimensions?: string | null;
-  shippingAddress?: string;
-  fullName?: string;
-  companyName?: string | null;
-  email?: string;
-  phone?: string;
+  dimensions?: DimensionEntry[];
+  volume?: string | null;
+  etd?: string | null;
+  eta?: string | null;
+  manualTrackingNumber?: string | null;
+  shipperName?: string;
+  consigneeName?: string | null;
+  billTo?: string;
 }
 
 function requireString(value: unknown, label: string): string {
@@ -36,25 +45,23 @@ export async function POST(request: Request) {
   let fields: {
     service: string;
     goodsType: string;
+    commodityDeclaration: string;
     origin: string;
     destination: string;
     grossWeight: number;
     packages: number;
-    shippingAddress: string;
-    fullName: string;
-    email: string;
-    phone: string;
+    shipperName: string;
+    billTo: string;
   };
 
   try {
     const service = requireString(body.service, "Service");
     const goodsType = requireString(body.goodsType, "Type of goods");
+    const commodityDeclaration = requireString(body.commodityDeclaration, "Commodity declaration");
     const origin = requireString(body.origin, "Origin");
     const destination = requireString(body.destination, "Destination");
-    const shippingAddress = requireString(body.shippingAddress, "Shipping address");
-    const fullName = requireString(body.fullName, "Full name");
-    const email = requireString(body.email, "Email address");
-    const phone = requireString(body.phone, "Phone number");
+    const shipperName = requireString(body.shipperName, "Shipper name");
+    const billTo = requireString(body.billTo, "Bill to");
 
     const grossWeight = Number(body.grossWeight);
     if (!Number.isFinite(grossWeight) || grossWeight <= 0) {
@@ -65,7 +72,17 @@ export async function POST(request: Request) {
       throw new Error("Enter at least one package.");
     }
 
-    fields = { service, goodsType, origin, destination, grossWeight, packages, shippingAddress, fullName, email, phone };
+    fields = {
+      service,
+      goodsType,
+      commodityDeclaration,
+      origin,
+      destination,
+      grossWeight,
+      packages,
+      shipperName,
+      billTo,
+    };
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Invalid booking details." },
@@ -73,51 +90,47 @@ export async function POST(request: Request) {
     );
   }
 
+  const dimensionsList = Array.isArray(body.dimensions)
+    ? body.dimensions
+        .filter((d) => d && (d.length || d.width || d.height))
+        .map((d) => ({
+          length: d.length || "",
+          width: d.width || "",
+          height: d.height || "",
+          quantity: d.quantity || "1",
+          unit: d.unit || "cm",
+        }))
+    : [];
+
   try {
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase.rpc("create_booking", {
       p_service: fields.service,
       p_goods_type: fields.goodsType,
-      p_special_instructions: body.specialInstructions || null,
+      p_commodity_declaration: fields.commodityDeclaration,
       p_origin: fields.origin,
       p_destination: fields.destination,
       p_gross_weight_kg: fields.grossWeight,
       p_packages: fields.packages,
-      p_dimensions: body.dimensions || null,
-      p_shipping_address: fields.shippingAddress,
-      p_full_name: fields.fullName,
-      p_company_name: body.companyName || null,
-      p_email: fields.email,
-      p_phone: fields.phone,
+      p_dimensions_list: dimensionsList,
+      p_volume: body.volume || null,
+      p_manual_tracking_number: body.manualTrackingNumber || null,
+      p_shipper_name: fields.shipperName,
+      p_consignee_name: body.consigneeName || null,
+      p_bill_to: fields.billTo,
+      p_etd: body.etd || null,
+      p_eta: body.eta || null,
     });
 
     if (error) throw error;
     const trackingNumber = data as string;
 
-    let emailSent = true;
-    try {
-      await sendBookingConfirmationEmail({
-        trackingNumber,
-        fullName: fields.fullName,
-        email: fields.email,
-        service: fields.service,
-        goodsType: fields.goodsType,
-        origin: fields.origin,
-        destination: fields.destination,
-        grossWeight: String(fields.grossWeight),
-        packages: String(fields.packages),
-        dimensions: body.dimensions || null,
-        shippingAddress: fields.shippingAddress,
-        specialInstructions: body.specialInstructions || null,
-      });
-    } catch (emailErr) {
-      // Never let an email hiccup take down a successful booking — the
-      // tracking number is already saved. Just log it server-side.
-      emailSent = false;
-      console.error("Booking confirmation email failed:", emailErr);
-    }
-
-    return NextResponse.json({ trackingNumber, emailSent });
+    // No email is collected on the booking form anymore, so there's
+    // nothing to send a confirmation to — this simply becomes a no-op
+    // rather than an error. Staff can still add an email to the booking
+    // later (via the admin edit API) if a customer provides one by other
+    // means, and status-update emails will start working from then on.
+    return NextResponse.json({ trackingNumber, emailSent: false });
   } catch (err) {
     return NextResponse.json(
       {

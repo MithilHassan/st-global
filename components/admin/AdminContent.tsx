@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileEdit, Plus, Trash2, ExternalLink } from "lucide-react";
+import { FileEdit, Plus, Trash2, ExternalLink, ImagePlus } from "lucide-react";
 import AdminShell from "./AdminShell";
 import type {
   SiteContent,
@@ -14,6 +14,7 @@ import type {
   ContactItem,
   FooterContent,
   SocialLinks,
+  GalleryContent,
 } from "@/lib/content";
 
 type Notice = { type: "success" | "error"; msg: string } | null;
@@ -118,6 +119,11 @@ export default function AdminContent() {
   const [socialSaving, setSocialSaving] = useState(false);
   const [socialNotice, setSocialNotice] = useState<Notice>(null);
 
+  const [gallery, setGallery] = useState<GalleryContent | null>(null);
+  const [gallerySaving, setGallerySaving] = useState(false);
+  const [galleryNotice, setGalleryNotice] = useState<Notice>(null);
+  const [galleryUploading, setGalleryUploading] = useState(false);
+
   async function load() {
     setError(null);
     try {
@@ -133,6 +139,7 @@ export default function AdminContent() {
       setContacts(c.contacts);
       setFooter(c.footer);
       setSocial(c.social);
+      setGallery(c.gallery);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load content.");
     }
@@ -203,6 +210,48 @@ export default function AdminContent() {
     }
   }
 
+  async function handleGalleryUpload(files: FileList) {
+    setGalleryUploading(true);
+    setGalleryNotice(null);
+    try {
+      for (const file of Array.from(files)) {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/admin/content/gallery-image", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? `Failed to upload ${file.name}.`);
+        setContent(data.content);
+        setGallery(data.content.gallery);
+      }
+      setGalleryNotice({ type: "success", msg: "Photo(s) added — live on the gallery page now." });
+    } catch (err) {
+      setGalleryNotice({ type: "error", msg: err instanceof Error ? err.message : "Failed to upload photo." });
+    } finally {
+      setGalleryUploading(false);
+    }
+  }
+
+  async function handleGalleryDelete(path: string) {
+    setGalleryUploading(true);
+    setGalleryNotice(null);
+    try {
+      const res = await fetch("/api/admin/content/gallery-image", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to remove photo.");
+      setContent(data.content);
+      setGallery(data.content.gallery);
+      setGalleryNotice({ type: "success", msg: "Photo removed." });
+    } catch (err) {
+      setGalleryNotice({ type: "error", msg: err instanceof Error ? err.message : "Failed to remove photo." });
+    } finally {
+      setGalleryUploading(false);
+    }
+  }
+
   return (
     <AdminShell active="content" eyebrow="Operations" title="Content">
       <div className="mb-6 flex items-center justify-between gap-3">
@@ -220,7 +269,7 @@ export default function AdminContent() {
         <p className="mb-6 border border-signal/40 bg-signal/5 px-4 py-3 text-sm text-ink">{error}</p>
       )}
 
-      {!content || !hero || !stats || !offices || !profile || !contacts || !footer || !social ? (
+      {!content || !hero || !stats || !offices || !profile || !contacts || !footer || !social || !gallery ? (
         <p className="text-sm text-ink/50">Loading content…</p>
       ) : (
         <div className="space-y-6">
@@ -521,6 +570,73 @@ export default function AdminContent() {
             </p>
             <SaveButton saving={socialSaving} onClick={() => saveBlock("social", social, setSocialSaving, setSocialNotice)} />
             <NoticeText notice={socialNotice} />
+          </div>
+
+          {/* Photo gallery */}
+          <div className="border border-line bg-white p-6">
+            <CardHeader title="Photo gallery" subtitle="Powers the public /gallery page." />
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <Field label="Page heading" value={gallery.heading} onChange={(v) => setGallery({ ...gallery, heading: v })} />
+              <Field label="Intro line" value={gallery.intro} onChange={(v) => setGallery({ ...gallery, intro: v })} />
+            </div>
+            <SaveButton
+              saving={gallerySaving}
+              onClick={() => saveBlock("gallery", gallery, setGallerySaving, setGalleryNotice)}
+            />
+
+            <div className="mt-6 border-t border-line pt-5">
+              <span className="mb-3 block font-mono text-[10px] uppercase tracking-wide text-ink/50">
+                Photos ({gallery.images.length})
+              </span>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {gallery.images.map((img) => (
+                  <div key={img.path} className="group relative border border-line">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url} alt="" className="aspect-square w-full object-cover" />
+                    <button
+                      onClick={() => handleGalleryDelete(img.path)}
+                      disabled={galleryUploading}
+                      className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center bg-ink/70 text-paper opacity-0 transition-opacity hover:bg-signal group-hover:opacity-100 disabled:opacity-50"
+                      title="Remove photo"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                    <input
+                      type="text"
+                      value={img.caption}
+                      onChange={(e) => {
+                        const nextImages = gallery.images.map((i) =>
+                          i.path === img.path ? { ...i, caption: e.target.value } : i
+                        );
+                        setGallery({ ...gallery, images: nextImages });
+                      }}
+                      onBlur={() => saveBlock("gallery", gallery, setGallerySaving, setGalleryNotice)}
+                      placeholder="Caption (optional)"
+                      className="w-full border-t border-line bg-white px-1.5 py-1 text-[10px] placeholder:text-ink/30 focus:outline-none"
+                    />
+                  </div>
+                ))}
+                <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1.5 border border-dashed border-line text-ink/40 hover:border-ink hover:text-ink">
+                  <ImagePlus size={18} />
+                  <span className="font-mono text-[10px] uppercase tracking-wide">
+                    {galleryUploading ? "Uploading…" : "Add photos"}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    multiple
+                    disabled={galleryUploading}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) handleGalleryUpload(e.target.files);
+                      e.target.value = "";
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              <p className="mt-2 text-[11px] text-ink/40">JPG, PNG, WEBP or GIF, up to 8MB each. Select multiple files to upload several at once.</p>
+              <NoticeText notice={galleryNotice} />
+            </div>
           </div>
         </div>
       )}

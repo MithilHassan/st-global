@@ -8,17 +8,21 @@ export const dynamic = "force-dynamic";
 interface BookingEditBody {
   service_type?: string;
   goods_type?: string;
+  commodity_declaration?: string | null;
   origin?: string;
   destination?: string;
   weight_kg?: number | string;
   packages?: number | string;
-  dimensions?: string | null;
-  shipping_address?: string | null;
+  volume?: string | null;
+  dimensions_list?: unknown;
+  bill_to?: string | null;
+  etd?: string | null;
+  eta?: string | null;
   notes?: string | null;
   shipper_name?: string;
-  shipper_company?: string | null;
-  shipper_email?: string;
-  shipper_phone?: string;
+  consignee_name?: string | null;
+  shipper_email?: string | null;
+  shipper_phone?: string | null;
 }
 
 function requireString(value: unknown, label: string): string {
@@ -54,8 +58,7 @@ export async function PATCH(
     const origin = requireString(body.origin, "Origin");
     const destination = requireString(body.destination, "Destination");
     const shipperName = requireString(body.shipper_name, "Shipper name");
-    const shipperEmail = requireString(body.shipper_email, "Email address");
-    const shipperPhone = requireString(body.shipper_phone, "Phone number");
+    const billTo = requireString(body.bill_to, "Bill to");
 
     const weightKg = Number(body.weight_kg);
     if (!Number.isFinite(weightKg) || weightKg <= 0) {
@@ -74,17 +77,21 @@ export async function PATCH(
     update = {
       service_type: serviceType,
       goods_type: goodsType,
+      commodity_declaration: body.commodity_declaration?.trim() || null,
       origin,
       destination,
       weight_kg: weightKg,
       packages,
-      dimensions: body.dimensions?.trim() || null,
-      shipping_address: body.shipping_address?.trim() || null,
+      volume: body.volume?.trim() || null,
+      dimensions_list: Array.isArray(body.dimensions_list) ? body.dimensions_list : [],
+      bill_to: billTo,
+      etd: body.etd || null,
+      eta: body.eta || null,
       notes: body.notes?.trim() || null,
       shipper_name: shipperName,
-      shipper_company: body.shipper_company?.trim() || null,
-      shipper_email: shipperEmail,
-      shipper_phone: shipperPhone,
+      consignee_name: body.consignee_name?.trim() || null,
+      shipper_email: body.shipper_email?.trim() || null,
+      shipper_phone: body.shipper_phone?.trim() || null,
       mode,
       updated_at: new Date().toISOString(),
     };

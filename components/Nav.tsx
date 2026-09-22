@@ -6,8 +6,9 @@ import { MailIcon, PhoneIcon, ChevronDownIcon, MapPinIcon, TwitterIcon, Instagra
 import { CORE_SERVICES } from "@/lib/site-data";
 
 const LINKS = [
-  { href: "/#network", label: "Network" },
+  { href: "/#network", label: "Contact US" },
   { href: "/#profile", label: "Company profile" },
+  { href: "/gallery", label: "Gallery" },
 ];
 
 const SOCIAL_DEFAULTS = { twitter: "#", instagram: "#", linkedin: "#", facebook: "#" };
@@ -30,7 +31,7 @@ export default function Nav() {
       .then((data) => {
         if (data?.social) setSocial(data.social);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {

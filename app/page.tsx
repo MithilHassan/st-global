@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Nav from "@/components/Nav";
+import SectionEyebrow from "@/components/SectionEyebrow";
 import RouteManifest from "@/components/RouteManifest";
 import PortSkylineArt from "@/components/PortSkylineArt";
 import WorldMapPortArt from "@/components/WorldMapPortArt";
@@ -395,17 +396,7 @@ export default async function Home() {
   );
 }
 
-function SectionEyebrow({ children, dark = false }: { children: React.ReactNode; dark?: boolean }) {
-  return (
-    <span
-      className={`font-mono text-[11px] uppercase tracking-[0.25em] ${
-        dark ? "text-royalLight" : "text-teal"
-      }`}
-    >
-      {children}
-    </span>
-  );
-}
+
 
 function FeatureBlock({
   eyebrow,

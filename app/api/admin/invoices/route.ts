@@ -19,7 +19,7 @@ export async function GET() {
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase
       .from("invoices")
-      .select("id, invoice_number, invoice_date, line_items, paid, booking_id, created_at, bookings(tracking_number, origin, destination)")
+      .select("id, invoice_number, invoice_date, line_items, paid, currency, balance_type, booking_id, created_at, bookings(tracking_number, origin, destination), shipper, consignee")
       .order("created_at", { ascending: false });
     if (error) throw error;
     return NextResponse.json({ invoices: data });
@@ -71,9 +71,24 @@ export async function POST(request: Request) {
       .single();
     if (bookingError) throw bookingError;
 
-    const bill_to = booking.shipper_company
-      ? `${booking.shipper_name}\n${booking.shipper_company}\n${booking.shipper_email}\n${booking.shipper_phone}`
-      : `${booking.shipper_name}\n${booking.shipper_email}\n${booking.shipper_phone}`;
+    // Each comma-separated commodity becomes its own invoice line item —
+    // e.g. "Lithium-ion batteries, Brake discs" -> two separate rows.
+    const commodityItems = (booking.commodity_declaration ?? "")
+      .split(",")
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+    const lineItems =
+      commodityItems.length > 0
+        ? commodityItems.map((description: string) => ({ description, unit: 1, unitPrice: 0 }))
+        : [
+            {
+              description: booking.goods_type ?? booking.service_type ?? "Freight forwarding services",
+              unit: booking.packages ? Number(booking.packages) : 1,
+              unitPrice: 0,
+            },
+          ];
+
+    const bill_to = booking.bill_to ?? booking.shipper_name ?? "";
 
     const prefill = {
       booking_id: bookingId,
@@ -81,38 +96,24 @@ export async function POST(request: Request) {
       invoice_number: `INV-${booking.tracking_number}`,
       bill_to,
       shipper: booking.shipper_name,
-      consignee: booking.consignee_name ?? booking.consignee_address ?? "",
+      consignee: booking.consignee_name ?? "",
       pol: booking.origin,
       pod: booking.destination,
       terms: booking.incoterm ?? "",
       hbl_no: booking.tracking_number,
       pkgs: booking.packages ? Number(booking.packages) : null,
       weight: booking.weight_kg ? Number(booking.weight_kg) : null,
-      line_items: [
-        {
-          description:
-            booking.cargo_description ??
-            booking.goods_type ??
-            booking.service_type ??
-            "Freight forwarding services",
-          unit: booking.packages ? Number(booking.packages) : 1,
-          unitPrice: 0,
-        },
-      ],
+      volume: booking.volume ?? null,
+      etd: booking.etd ?? null,
+      eta: booking.eta ?? null,
+      line_items: lineItems,
       challan_no: booking.tracking_number, // = hbl_no
       challan_date: new Date().toISOString().slice(0, 10), // = invoice_date
-      challan_name: booking.shipper_name, // = shipper
       challan_address: bill_to, // = bill_to — kept in sync with it afterward, see InvoiceEditor.tsx
-      challan_contact: booking.shipper_phone,
-      challan_items: [
-        {
-          description:
-            booking.cargo_description ?? booking.goods_type ?? booking.service_type ?? "",
-          qty: booking.packages ? String(booking.packages) : "",
-          weight: booking.weight_kg ? `${booking.weight_kg} kg` : "",
-          remark: "",
-        },
-      ],
+      // Items are left blank on purpose — staff add and maintain the
+      // challan's line items manually, they're not auto-filled from the
+      // booking's commodity declaration or line items.
+      challan_items: [{ description: "", qty: "", weight: "", remark: "" }],
     };
 
     const { data: created, error: insertError } = await supabase

@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   PackageSearch,
   Users,
+  FileText,
   Settings,
   Bell,
   Plus,
@@ -20,12 +21,13 @@ import {
 } from "lucide-react";
 import type { NotificationItem } from "./shared";
 
-type NavKey = "dashboard" | "bookings" | "customers" | "content" | "settings";
+type NavKey = "dashboard" | "bookings" | "customers" | "invoices" | "content" | "settings";
 
 const NAV_ITEMS: { key: NavKey; label: string; icon: typeof LayoutDashboard; href: string; enabled: boolean }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/admin/dashboard", enabled: true },
   { key: "bookings", label: "Bookings", icon: PackageSearch, href: "/admin", enabled: true },
   { key: "customers", label: "Customers", icon: Users, href: "/admin/customers", enabled: true },
+  { key: "invoices", label: "Invoices", icon: FileText, href: "/admin/invoices", enabled: true },
   { key: "content", label: "Content", icon: FileEdit, href: "/admin/content", enabled: true },
   { key: "settings", label: "Settings", icon: Settings, href: "/admin/settings", enabled: true },
 ];
@@ -54,6 +56,7 @@ export default function AdminShell({
     email: "",
     initials: "A",
   });
+  const [canManageContent, setCanManageContent] = useState(false);
 
   useEffect(() => {
     fetch("/api/admin/me", { cache: "no-store" })
@@ -66,8 +69,11 @@ export default function AdminShell({
             email: data.identity.email,
             initials: data.identity.name.slice(0, 2).toUpperCase(),
           });
+          setCanManageContent(Boolean(data.identity.isSuperAdmin));
         } else {
           setWho({ name: "Team admin", email: "Shared password", initials: "TA" });
+          // The shared/master password is always treated as super admin.
+          setCanManageContent(true);
         }
       })
       .catch(() => {});
@@ -121,7 +127,7 @@ export default function AdminShell({
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => item.key !== "content" || canManageContent).map((item) => {
             const Icon = item.icon;
             const isActive = item.key === active;
             if (!item.enabled) {
