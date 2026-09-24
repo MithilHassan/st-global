@@ -510,7 +510,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
               <td className="inv-bill-to-label">
                 Bill To:
                 <br />
-                <span style={{ fontWeight: "normal", fontSize: 13, marginTop: 10 }}>
+                <span style={{ fontWeight: "normal", fontSize: 13, display: "inline-block", marginTop: 10 }}>
                   <EditableField
                     value={data.bill_to}
                     onChange={(v) => updateField("bill_to", String(v))}
@@ -787,13 +787,13 @@ export default function InvoiceEditor({ invoiceId }: Props) {
               <tr>
                 <td style={{ padding: 4, fontWeight: "normal" }}>
                   <EditableField
-                    value={data.company_phone}
+                    value={data.company_phone || "+880 1719-089697"}
                     onChange={(v) => updateField("company_phone", String(v))}
                   />
                 </td>
                 <td style={{ padding: 4, fontWeight: "normal" }}>
                   <EditableField
-                    value={data.company_email}
+                    value={data.company_email || "tapos@stbd.net"}
                     onChange={(v) => updateField("company_email", String(v))}
                   />
                 </td>
