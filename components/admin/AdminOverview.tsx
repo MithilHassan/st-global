@@ -42,6 +42,7 @@ interface OverviewInvoice {
   invoice_date: string | null;
   line_items: OverviewInvoiceLineItem[];
   paid: number;
+  currency: string | null;
   created_at: string;
   bookings: { tracking_number: string; origin: string; destination: string } | null;
 }
@@ -108,17 +109,26 @@ export default function AdminOverview() {
 
     const activeShipments = bookings.filter((b) => b.status !== "delivered").length;
 
-    let totalInvoiced = 0;
-    let totalPaid = 0;
+    const totalsByCurrency: Record<string, { invoiced: number; paid: number; outstanding: number; count: number }> = {};
+    
     for (const inv of invoices) {
+      const currency = inv.currency || "USD";
+      if (!totalsByCurrency[currency]) {
+        totalsByCurrency[currency] = { invoiced: 0, paid: 0, outstanding: 0, count: 0 };
+      }
+      
       const invTotal = inv.line_items.reduce(
         (sum, li) => sum + (Number(li.unit) || 0) * (Number(li.unitPrice) || 0),
         0
       );
-      totalInvoiced += invTotal;
-      totalPaid += Number(inv.paid) || 0;
+      totalsByCurrency[currency].invoiced += invTotal;
+      totalsByCurrency[currency].paid += Number(inv.paid) || 0;
+      totalsByCurrency[currency].count += 1;
     }
-    const outstanding = totalInvoiced - totalPaid;
+
+    for (const currency in totalsByCurrency) {
+      totalsByCurrency[currency].outstanding = totalsByCurrency[currency].invoiced - totalsByCurrency[currency].paid;
+    }
 
     // Bookings created per day, last 14 days (including empty days as 0).
     const dayBuckets: { date: string; label: string; count: number }[] = [];
@@ -145,7 +155,7 @@ export default function AdminOverview() {
       color: STATUS_COLORS[s.key] ?? LINE_COLOR,
     }));
 
-    return { perStatus, activeShipments, totalInvoiced, totalPaid, outstanding, dayBuckets, statusChartData };
+    return { perStatus, activeShipments, totalsByCurrency, dayBuckets, statusChartData };
   }, [bookings, invoices]);
 
   const recentBookings = bookings?.slice(0, 6) ?? [];
@@ -189,18 +199,46 @@ export default function AdminOverview() {
                   <DollarSign size={15} className="text-teal" />
                 </span>
               </div>
-              <p className="mt-1 font-display text-3xl font-semibold">{formatUSD(stats.totalInvoiced)}</p>
+              <div className="mt-1 flex flex-col gap-0.5 max-h-[80px] overflow-y-auto">
+                {Object.keys(stats.totalsByCurrency).length === 0 ? (
+                  <p className="font-display text-3xl font-semibold">USD 0.00</p>
+                ) : (
+                  Object.entries(stats.totalsByCurrency).map(([curr, data], i, arr) => (
+                    <p key={curr} className={`font-display ${arr.length === 1 ? 'text-3xl' : 'text-xl'} font-semibold break-words`}>
+                      {curr} {data.invoiced.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  ))
+                )}
+              </div>
               <p className="mt-1 text-[11px] text-ink/50">Across {invoices.length} invoice{invoices.length === 1 ? "" : "s"}</p>
             </Link>
-            <div className="border border-line bg-white px-5 py-4">
+            <div className="border border-line bg-white px-5 py-4 flex flex-col">
               <div className="flex items-start justify-between gap-2">
                 <p className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Outstanding balance</p>
                 <span className="flex h-8 w-8 items-center justify-center bg-signal/10">
                   <Wallet size={15} className="text-signal" />
                 </span>
               </div>
-              <p className="mt-1 font-display text-3xl font-semibold">{formatUSD(Math.max(0, stats.outstanding))}</p>
-              <p className="mt-1 text-[11px] text-ink/50">{formatUSD(stats.totalPaid)} collected so far</p>
+              <div className="mt-1 flex flex-col gap-0.5 max-h-[80px] overflow-y-auto flex-1">
+                {Object.keys(stats.totalsByCurrency).length === 0 ? (
+                  <p className="font-display text-3xl font-semibold">USD 0.00</p>
+                ) : (
+                  Object.entries(stats.totalsByCurrency).map(([curr, data], i, arr) => (
+                    <p key={curr} className={`font-display ${arr.length === 1 ? 'text-3xl' : 'text-xl'} font-semibold break-words`}>
+                      {curr} {Math.max(0, data.outstanding).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  ))
+                )}
+              </div>
+              {Object.keys(stats.totalsByCurrency).length === 1 ? (
+                <p className="mt-1 text-[11px] text-ink/50">
+                  {Object.keys(stats.totalsByCurrency)[0]} {Object.values(stats.totalsByCurrency)[0].paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} collected so far
+                </p>
+              ) : Object.keys(stats.totalsByCurrency).length > 1 ? (
+                <p className="mt-1 text-[11px] text-ink/50">Across multiple currencies</p>
+              ) : (
+                <p className="mt-1 text-[11px] text-ink/50">No collections yet</p>
+              )}
             </div>
           </section>
 

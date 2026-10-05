@@ -4,6 +4,8 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import WorldMapPortArt from "@/components/WorldMapPortArt";
+import { jsPDF } from "jspdf";
+import JsBarcode from "jsbarcode";
 import {
   PackageIcon,
   FileIcon,
@@ -21,24 +23,32 @@ import {
 } from "@/components/icons";
 
 const SERVICE_OPTIONS = [
-  "Air Freight (Express & General)",
-  "Ocean Freight",
-  "Combined Sea/Air & Air/Sea",
-  "Customs Brokerage",
-  "International Courier Service",
-  "Project & Heavylift Shipment",
-  "Door-to-Door (DAP/DDP)",
+  "Air Freight",
+  "Air Freight and others",
+  "Sea Freight",
+  "Sea Freight and Others",
+  "HAWB/HBL Fee",
+  "MAWB/MBL Fee",
+  "THC Fee",
+  "Scanning/X-Ray Fee",
+  "Pick Up Charges",
+  "Customs Clearance",
+  "Loading/Unloading",
+  "DAP",
+  "DDU",
+  "DDP",
+  "Duty",
+  "Transport",
+  "Miscellaneous",
+  "Profit Share"
 ];
 
 const GOODS_TYPE_OPTIONS = [
-  "General Cargo",
-  "Perishable Goods",
-  "Pharmaceutical",
-  "Hazardous / Dangerous Goods",
-  "Fragile / High-Value",
-  "Project / Heavylift",
+  "General Goods",
+  "Dangerous Goods/Hazard Goods",
+  "Personal Effect",
   "Documents",
-  "Personal Effects / Used Goods",
+  "Liguid Item"
 ];
 
 const DIMENSION_UNITS = ["cm", "in"];
@@ -188,6 +198,116 @@ export default function BookingPage() {
 
       setTrackingNumber(data.trackingNumber as string);
       setSubmitStatus("idle");
+
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 20;
+
+      // Draw Header
+      doc.setFillColor(11, 30, 51); // ink color: #0B1E33
+      doc.rect(0, 0, pageWidth, 40, "F");
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont("helvetica", "bold");
+      doc.text("BOOKING RECEIPT", margin, 25);
+
+      // Generate Barcode
+      const canvas = document.createElement("canvas");
+      JsBarcode(canvas, data.trackingNumber as string, {
+        format: "CODE128",
+        displayValue: false,
+        height: 40,
+        margin: 0,
+        background: "#0B1E33",
+        lineColor: "#ffffff"
+      });
+      const barcodeDataUrl = canvas.toDataURL("image/png");
+      doc.addImage(barcodeDataUrl, "PNG", pageWidth - margin - 50, 10, 50, 20);
+
+      // Reset Text Color
+      doc.setTextColor(30, 30, 30);
+      
+      // Tracking Details Section
+      let currentY = 55;
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Tracking Number:", margin, currentY);
+      doc.setFont("helvetica", "normal");
+      doc.text(data.trackingNumber as string, margin + 35, currentY);
+
+      doc.setFont("helvetica", "bold");
+      doc.text("Date:", pageWidth / 2, currentY);
+      doc.setFont("helvetica", "normal");
+      doc.text(new Date().toLocaleDateString(), pageWidth / 2 + 15, currentY);
+
+      currentY += 15;
+
+      // Helper for Section Headers
+      const drawSectionHeader = (title: string, y: number) => {
+        doc.setFillColor(241, 243, 237); // paper color #F1F3ED
+        doc.rect(margin, y - 6, pageWidth - margin * 2, 8, "F");
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(28, 110, 113); // teal color #1C6E71
+        doc.text(title.toUpperCase(), margin + 2, y);
+        doc.setTextColor(30, 30, 30);
+        return y + 10;
+      };
+
+      // Helper for Key-Value pairs
+      const drawRow = (label: string, value: string, y: number) => {
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.text(label, margin, y);
+        doc.setFont("helvetica", "normal");
+        const splitVal = doc.splitTextToSize(value || "—", pageWidth - margin - 50);
+        doc.text(splitVal, margin + 45, y);
+        return y + (splitVal.length * 5);
+      };
+
+      currentY = drawSectionHeader("Service & Goods", currentY);
+      currentY = drawRow("Service:", form.service, currentY);
+      currentY = drawRow("Goods Type:", form.goodsType, currentY);
+      currentY = drawRow("Commodity:", form.commodityDeclaration, currentY) + 5;
+
+      currentY = drawSectionHeader("Route", currentY);
+      currentY = drawRow("Origin:", form.origin, currentY);
+      currentY = drawRow("Destination:", form.destination, currentY);
+      currentY = drawRow("ETD:", form.etd || "N/A", currentY);
+      currentY = drawRow("ETA:", form.eta || "N/A", currentY) + 5;
+
+      currentY = drawSectionHeader("Cargo Details", currentY);
+      currentY = drawRow("Gross Weight:", `${form.grossWeight} kg`, currentY);
+      currentY = drawRow("Packages:", form.packages, currentY);
+      currentY = drawRow("Volume:", form.volume || "N/A", currentY);
+      
+      const dims = form.dimensions.some((d) => d.length || d.width || d.height)
+        ? form.dimensions
+          .filter((d) => d.length || d.width || d.height)
+          .map((d) => `${d.length || "—"}x${d.width || "—"}x${d.height || "—"} ${d.unit} (x${d.quantity || 1})`)
+          .join(", ")
+        : "—";
+      currentY = drawRow("Dimensions:", dims, currentY) + 5;
+
+      currentY = drawSectionHeader("Parties", currentY);
+      currentY = drawRow("Shipper:", form.shipperName, currentY);
+      currentY = drawRow("Consignee:", form.consigneeName || "N/A", currentY);
+      currentY = drawRow("Bill To:", form.billTo, currentY);
+      currentY = drawRow("Manual Tracking:", form.manualTrackingNumber || "— (auto-generated)", currentY) + 5;
+
+      // Footer
+      currentY += 10;
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, currentY, pageWidth - margin, currentY);
+      currentY += 8;
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(100, 100, 100);
+      doc.text("Thank you for booking with ST Global Forwarding.", pageWidth / 2, currentY, { align: "center" });
+
+      doc.save(`Booking_Receipt_${data.trackingNumber}.pdf`);
+
       setForm(INITIAL);
       setStep(1);
     } catch (err) {
@@ -488,9 +608,9 @@ export default function BookingPage() {
                     "Dimensions",
                     form.dimensions.some((d) => d.length || d.width || d.height)
                       ? form.dimensions
-                          .filter((d) => d.length || d.width || d.height)
-                          .map((d) => `${d.length || "—"}x${d.width || "—"}x${d.height || "—"} ${d.unit} (x${d.quantity || 1})`)
-                          .join(", ")
+                        .filter((d) => d.length || d.width || d.height)
+                        .map((d) => `${d.length || "—"}x${d.width || "—"}x${d.height || "—"} ${d.unit} (x${d.quantity || 1})`)
+                        .join(", ")
                       : "—",
                   ],
                   ["Volume", form.volume || "—"],
@@ -503,9 +623,8 @@ export default function BookingPage() {
                 ].map(([label, value], i) => (
                   <div
                     key={label}
-                    className={`grid grid-cols-[160px_1fr] gap-4 px-5 py-3 text-sm sm:grid-cols-[220px_1fr] ${
-                      i % 2 === 1 ? "bg-paper" : "bg-white"
-                    }`}
+                    className={`grid grid-cols-[160px_1fr] gap-4 px-5 py-3 text-sm sm:grid-cols-[220px_1fr] ${i % 2 === 1 ? "bg-paper" : "bg-white"
+                      }`}
                   >
                     <span className="font-mono text-[11px] uppercase tracking-wide text-ink/50">
                       {label}
@@ -598,27 +717,24 @@ function Stepper({ current }: { current: number }) {
           <div key={s.n} className="flex flex-1 items-center last:flex-none">
             <div className="flex items-center gap-2">
               <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-mono text-[13px] font-medium transition-colors ${
-                  done ? "bg-teal text-paper" : active ? "bg-royal text-paper" : "bg-white text-ink/40 ring-1 ring-inset ring-line"
-                }`}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-mono text-[13px] font-medium transition-colors ${done ? "bg-teal text-paper" : active ? "bg-royal text-paper" : "bg-white text-ink/40 ring-1 ring-inset ring-line"
+                  }`}
               >
                 {s.n}
               </span>
               <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${
-                  active
-                    ? "border-royal bg-royal/10 text-royal"
-                    : done
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${active
+                  ? "border-royal bg-royal/10 text-royal"
+                  : done
                     ? "border-teal/40 bg-teal/10 text-teal"
                     : "border-line bg-paperdim text-ink/35"
-                }`}
+                  }`}
               >
                 <s.icon className="h-4 w-4" />
               </span>
               <span
-                className={`hidden font-mono text-[11px] uppercase tracking-wider sm:inline ${
-                  active ? "text-royal" : done ? "text-ink/70" : "text-ink/35"
-                }`}
+                className={`hidden font-mono text-[11px] uppercase tracking-wider sm:inline ${active ? "text-royal" : done ? "text-ink/70" : "text-ink/35"
+                  }`}
               >
                 {s.label}
               </span>
@@ -683,9 +799,8 @@ function Field({
   className?: string;
   icon?: (props: { className?: string }) => React.ReactElement;
 }) {
-  const common = `w-full border border-line bg-white py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-royal ${
-    Icon ? "pl-10 pr-3" : "px-3"
-  }`;
+  const common = `w-full border border-line bg-white py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-royal ${Icon ? "pl-10 pr-3" : "px-3"
+    }`;
   return (
     <label className={`block ${className}`}>
       <span className="mb-1.5 block font-mono text-[11px] uppercase tracking-wide text-royal/80">
@@ -695,9 +810,8 @@ function Field({
       <span className="relative block">
         {Icon && (
           <Icon
-            className={`pointer-events-none absolute left-3 h-4 w-4 text-ink/35 ${
-              textarea ? "top-3.5" : "top-1/2 -translate-y-1/2"
-            }`}
+            className={`pointer-events-none absolute left-3 h-4 w-4 text-ink/35 ${textarea ? "top-3.5" : "top-1/2 -translate-y-1/2"
+              }`}
           />
         )}
         {textarea ? (
@@ -750,9 +864,8 @@ function SelectField({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={`w-full appearance-none border border-line bg-white py-2.5 pr-10 text-sm focus:border-royal ${
-            Icon ? "pl-10" : "px-3"
-          } ${value ? "text-ink" : "text-ink/40"}`}
+          className={`w-full appearance-none border border-line bg-white py-2.5 pr-10 text-sm focus:border-royal ${Icon ? "pl-10" : "px-3"
+            } ${value ? "text-ink" : "text-ink/40"}`}
         >
           <option value="" disabled hidden>
             {placeholder}

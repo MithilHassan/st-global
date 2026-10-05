@@ -93,6 +93,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
   const [originalData, setOriginalData] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
@@ -289,6 +290,22 @@ export default function InvoiceEditor({ invoiceId }: Props) {
     }
   };
 
+  // ── Delete ──────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!data) return;
+    if (!confirm("Are you sure you want to delete this invoice? This action cannot be undone.")) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/invoices/${data.id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to delete invoice.");
+      router.push("/admin/invoices");
+    } catch (err) {
+      setToast({ type: "error", msg: "Delete failed: " + (err instanceof Error ? err.message : "Unknown error") });
+      setDeleting(false);
+    }
+  };
+
   // ── Print ───────────────────────────────────────────────────
   const handlePrint = () => {
     const printArea = document.getElementById("invoice-print-area");
@@ -331,7 +348,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
             .inv-details-values td { height: 25px; text-align: center; font-size: 12px; }
             .inv-main-data th { text-align: center; padding: 5px; font-size: 13px; }
             .inv-totals-table td { font-size: 13px; }
-            .inv-seal-container { display: flex; justify-content: flex-end; margin-top: 20px; padding-right: 80px; }
+            .inv-seal-container { display: flex; justify-content: flex-end; margin-top: 40px; padding-right: 80px; }
             .inv-seal-image { width: 120px; height: auto; object-fit: contain; }
             .inv-footer { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; font-weight: bold; }
             .inv-line-item-row td { padding: 4px 5px; vertical-align: middle; font-size: 13px; }
@@ -432,10 +449,18 @@ export default function InvoiceEditor({ invoiceId }: Props) {
           {isDirty && <span className="inv-unsaved-badge">● Unsaved changes</span>}
         </div>
         <div className="inv-toolbar-right">
-          <button className="btn btn-secondary btn-sm" onClick={handlePrint}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleDelete}
+            disabled={saving || deleting}
+            style={{ color: "#b91c1c", borderColor: "#fca5a5" }}
+          >
+            {deleting ? "⏳ Deleting..." : "🗑 Delete"}
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={handlePrint} disabled={saving || deleting}>
             🖨 Print
           </button>
-          <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+          <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving || deleting}>
             {saving ? "⏳ Saving..." : "💾 Save Invoice"}
           </button>
         </div>
@@ -952,11 +977,12 @@ export default function InvoiceEditor({ invoiceId }: Props) {
             + Add row
           </button>
 
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 60 }}>
-            <div style={{ textAlign: "center", fontSize: 12, fontWeight: "bold" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 40 }}>
+            <div style={{ textAlign: "center", fontSize: 12, fontWeight: "bold", display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <img src="/images/seal.png" alt="Company Seal" className="inv-seal-image" style={{ marginBottom: 8 }} />
               <div style={{ width: 180, borderTop: "1px solid black", paddingTop: 4 }}>Authorized Signature</div>
             </div>
-            <div style={{ textAlign: "center", fontSize: 12, fontWeight: "bold" }}>
+            <div style={{ textAlign: "center", fontSize: 12, fontWeight: "bold", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
               <div style={{ width: 180, borderTop: "1px solid black", paddingTop: 4 }}>Customer Signature</div>
             </div>
           </div>
@@ -1158,7 +1184,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
         .inv-seal-container {
           display: flex;
           justify-content: flex-end;
-          margin-top: 20px;
+          margin-top: 40px;
           padding-right: 80px;
         }
         .inv-seal-image {

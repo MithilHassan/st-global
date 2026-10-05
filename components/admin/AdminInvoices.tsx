@@ -176,6 +176,35 @@ export default function AdminInvoices() {
     await load();
   }
 
+  async function handleDeleteSelected() {
+    if (!enriched || selectedIds.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} invoice${selectedIds.size === 1 ? "" : "s"}? This action cannot be undone.`)) return;
+    
+    setBulkApplying(true);
+    setBulkNotice(null);
+    const targets = enriched.filter(({ inv }) => selectedIds.has(inv.id));
+
+    const results = await Promise.allSettled(
+      targets.map(({ inv }) =>
+        fetch(`/api/admin/invoices/${inv.id}`, { method: "DELETE" }).then(async (res) => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? "Failed to delete.");
+        })
+      )
+    );
+
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.length - succeeded;
+    setBulkNotice(
+      failed === 0
+        ? `Deleted ${succeeded} invoice${succeeded === 1 ? "" : "s"}.`
+        : `Deleted ${succeeded} of ${targets.length} — ${failed} failed. Check server logs.`
+    );
+    setSelectedIds(new Set());
+    setBulkApplying(false);
+    await load();
+  }
+
   function handleExportCsv() {
     if (!filtered || filtered.length === 0) return;
     const headers = [
@@ -335,6 +364,13 @@ export default function AdminInvoices() {
                   className="flex-1 border border-ink bg-ink py-2 font-mono text-[11px] uppercase tracking-wider text-paper transition-colors hover:bg-royal hover:border-royal disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {bulkApplying ? "Applying…" : "Mark selected as paid"}
+                </button>
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={bulkApplying}
+                  className="border border-[#fca5a5] px-4 py-2 font-mono text-[11px] uppercase tracking-wider text-[#b91c1c] transition-colors hover:bg-[#fef2f2] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Delete selected
                 </button>
                 <button
                   onClick={() => setSelectedIds(new Set())}
