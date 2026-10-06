@@ -23,6 +23,7 @@ const EDITABLE_FIELDS = [
   "eta",
   "weight",
   "volume",
+  "dimension",
   "currency",
   "balance_type",
   "line_items",
@@ -69,11 +70,19 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const supabase = getSupabaseAdminClient();
     const { data, error } = await supabase
       .from("invoices")
-      .select("*, bookings(tracking_number, origin, destination)")
+      .select("*, bookings(tracking_number, origin, destination, dimensions_list)")
       .eq("id", params.id)
       .single();
 
     if (error) throw error;
+    
+    // Fallback for older invoices that were generated before dimension sync
+    if (!data.dimension && data.bookings?.dimensions_list) {
+      if (Array.isArray(data.bookings.dimensions_list) && data.bookings.dimensions_list.length > 0) {
+        data.dimension = JSON.stringify(data.bookings.dimensions_list);
+      }
+    }
+
     return NextResponse.json({ invoice: data });
   } catch (err) {
     return NextResponse.json(

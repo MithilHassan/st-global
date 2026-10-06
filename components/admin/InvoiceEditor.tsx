@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { Invoice, InvoiceLineItem, ChallanItem } from "@/lib/types";
-import { blankLineItem, blankChallanItem, numberToWordsCurrency, CURRENCIES } from "@/lib/types";
+import { blankLineItem, blankChallanItem, numberToWordsCurrency, CURRENCIES, numberToWords, getCurrencyInfo } from "@/lib/types";
 
 interface Props {
   invoiceId: string;
@@ -20,6 +20,7 @@ interface EditableFieldProps {
   className?: string;
   placeholder?: string;
   readOnly?: boolean;
+  multiline?: boolean;
 }
 
 function EditableField({
@@ -30,10 +31,11 @@ function EditableField({
   className = "",
   placeholder = "",
   readOnly = false,
+  multiline = false,
 }: EditableFieldProps) {
   const [editing, setEditing] = useState(false);
   const [localVal, setLocalVal] = useState(value === null || value === undefined ? "" : String(value));
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setLocalVal(value === null || value === undefined ? "" : String(value));
@@ -44,7 +46,7 @@ function EditableField({
 
   if (readOnly) {
     return (
-      <span className={`inv-field inv-field-readonly ${className}`} style={style}>
+      <span className={`inv-field inv-field-readonly ${className}`} style={{ whiteSpace: multiline ? "pre-wrap" : "normal", ...style }}>
         {type === "number" ? (parseFloat(String(value)) || 0).toFixed(2) : value || "—"}
       </span>
     );
@@ -54,7 +56,7 @@ function EditableField({
     return (
       <span
         className={`inv-field inv-field-display ${className}`}
-        style={{ cursor: "pointer", ...style }}
+        style={{ cursor: "pointer", whiteSpace: multiline ? "pre-wrap" : "normal", ...style }}
         onClick={() => setEditing(true)}
         title="Click to edit"
       >
@@ -69,9 +71,23 @@ function EditableField({
     if (v !== value) onChange?.(v);
   };
 
+  if (multiline) {
+    return (
+      <textarea
+        ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+        className={`inv-field inv-field-editing ${className}`}
+        value={localVal}
+        onChange={(e) => setLocalVal(e.target.value)}
+        onBlur={commit}
+        style={{ ...style, resize: "vertical", minHeight: "60px", fontFamily: "inherit" }}
+        placeholder={placeholder}
+      />
+    );
+  }
+
   return (
     <input
-      ref={inputRef}
+      ref={inputRef as React.RefObject<HTMLInputElement>}
       className={`inv-field inv-field-editing ${className}`}
       type={type === "date" ? "date" : type === "number" ? "number" : "text"}
       step={type === "number" ? "0.01" : undefined}
@@ -135,10 +151,19 @@ export default function InvoiceEditor({ invoiceId }: Props) {
           );
           // Only treat the saved wording as "customized" (and stop
           // auto-syncing it) if it doesn't match what auto-fill would have
-          // produced for the invoice's current total.
+          // produced for the invoice's current total (checking both new and legacy formats).
+          const info = getCurrencyInfo(json.invoice.currency || "USD");
+          const safeTotal = Number.isFinite(loadedTotal) ? Math.max(loadedTotal, 0) : 0;
+          const major = Math.floor(safeTotal);
+          const minor = Math.round((safeTotal - major) * 100);
+          let legacyWords = numberToWords(major) + " " + info.singular + (major !== 1 ? "s" : "");
+          if (minor > 0) legacyWords += " and " + numberToWords(minor) + " " + info.minorSingular + (minor !== 1 ? "s" : "");
+          legacyWords += " Only";
+
           wordsCustomizedRef.current =
             !!json.invoice.in_words &&
-            json.invoice.in_words !== numberToWordsCurrency(loadedTotal, json.invoice.currency || "USD");
+            json.invoice.in_words !== numberToWordsCurrency(loadedTotal, json.invoice.currency || "USD") &&
+            json.invoice.in_words !== legacyWords;
         }
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : "Failed to load invoice.");
@@ -214,6 +239,40 @@ export default function InvoiceEditor({ invoiceId }: Props) {
       if (!d || d.line_items.length <= 1) return d;
       return { ...d, line_items: d.line_items.filter((_, i) => i !== idx) };
     });
+  };
+
+  type DimensionEntry = { length: string; width: string; height: string; quantity: string; unit: string; };
+  const blankDimension = (): DimensionEntry => ({ length: "", width: "", height: "", quantity: "1", unit: "cm" });
+
+  const dimensions = useMemo(() => {
+    if (!data?.dimension) return [blankDimension()];
+    try {
+      const parsed = JSON.parse(data.dimension);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item) => {
+          if (typeof item === "string") return { ...blankDimension(), length: item };
+          return { ...blankDimension(), ...item };
+        });
+      }
+    } catch (e) {
+      // Ignore, it's a legacy plain text dimension
+    }
+    return [{ ...blankDimension(), length: data.dimension }];
+  }, [data?.dimension]);
+
+  const updateDimension = (idx: number, field: keyof DimensionEntry, value: string) => {
+    const newDims = [...dimensions];
+    newDims[idx] = { ...newDims[idx], [field]: value };
+    updateField("dimension", JSON.stringify(newDims));
+  };
+
+  const addDimension = () => {
+    updateField("dimension", JSON.stringify([...dimensions, blankDimension()]));
+  };
+
+  const removeDimension = (idx: number) => {
+    const newDims = dimensions.filter((_, i) => i !== idx);
+    updateField("dimension", JSON.stringify(newDims));
   };
 
   // ── Challan items — fully manual, not derived from the invoice's
@@ -535,11 +594,12 @@ export default function InvoiceEditor({ invoiceId }: Props) {
               <td className="inv-bill-to-label">
                 Bill To:
                 <br />
-                <span style={{ fontWeight: "normal", fontSize: 13, display: "inline-block", marginTop: 10 }}>
+                <span style={{ fontWeight: "normal", fontSize: 13, display: "inline-block", marginTop: 10, width: "100%" }}>
                   <EditableField
                     value={data.bill_to}
                     onChange={(v) => updateField("bill_to", String(v))}
                     placeholder="Client name / address"
+                    multiline
                   />
                 </span>
               </td>
@@ -655,19 +715,76 @@ export default function InvoiceEditor({ invoiceId }: Props) {
         </table>
 
         {/* ── LINE ITEMS TABLE ────────────────────────────── */}
-        <div className="no-print" style={{ marginTop: 15, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
-          <label style={{ fontSize: 11, fontWeight: "bold", color: "#666" }}>Currency</label>
-          <select
-            value={data.currency || "USD"}
-            onChange={(e) => updateField("currency", e.target.value)}
-            style={{ border: "1px solid #ccc", padding: "4px 8px", fontSize: 12, maxWidth: 220 }}
-          >
-            {CURRENCIES.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.code} — {c.majorUnit} ({c.symbol})
-              </option>
-            ))}
-          </select>
+        <div className="no-print" style={{ marginTop: 15, marginBottom: 15 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+              {dimensions.map((dim, idx) => (
+                <div key={idx} style={{ border: "1px solid #ddd", padding: "8px", display: "flex", alignItems: "center", gap: 10, background: "#fff" }}>
+                  <EditableField
+                    value={dim.length}
+                    onChange={(v) => updateDimension(idx, "length", String(v))}
+                    placeholder="Length"
+                    style={{ border: "1px solid #ddd", padding: "6px 10px", width: 80, fontSize: 13, color: "#888" }}
+                  />
+                  <EditableField
+                    value={dim.width}
+                    onChange={(v) => updateDimension(idx, "width", String(v))}
+                    placeholder="Width"
+                    style={{ border: "1px solid #ddd", padding: "6px 10px", width: 80, fontSize: 13, color: "#888" }}
+                  />
+                  <EditableField
+                    value={dim.height}
+                    onChange={(v) => updateDimension(idx, "height", String(v))}
+                    placeholder="Height"
+                    style={{ border: "1px solid #ddd", padding: "6px 10px", width: 80, fontSize: 13, color: "#888" }}
+                  />
+                  <EditableField
+                    value={dim.quantity}
+                    onChange={(v) => updateDimension(idx, "quantity", String(v))}
+                    placeholder="1"
+                    type="number"
+                    style={{ border: "1px solid #ddd", padding: "6px 10px", width: 60, fontSize: 13, color: "#333" }}
+                  />
+                  <select
+                    value={dim.unit || "cm"}
+                    onChange={(e) => updateDimension(idx, "unit", e.target.value)}
+                    style={{ border: "1px solid #ddd", padding: "7px 10px", fontSize: 13, minWidth: 60, background: "#fff", color: "#333" }}
+                  >
+                    <option value="cm">cm</option>
+                    <option value="m">m</option>
+                    <option value="inch">inch</option>
+                  </select>
+                  <button
+                    onClick={() => removeDimension(idx)}
+                    style={{ color: "#bbb", background: "none", border: "1px solid #f0f0f0", cursor: "pointer", fontSize: 13, padding: "6px 16px", backgroundClip: "padding-box" }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={addDimension}
+                style={{ alignSelf: "flex-start", fontSize: 11, color: "#557799", background: "#f8f9fa", border: "1px solid #ddd", cursor: "pointer", padding: "8px 12px", letterSpacing: "1px", textTransform: "uppercase" }}
+              >
+                + ADD DIMENSION
+              </button>
+            </div>
+            
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 20, marginTop: 4 }}>
+              <label style={{ fontSize: 11, fontWeight: "bold", color: "#666" }}>Currency</label>
+              <select
+                value={data.currency || "USD"}
+                onChange={(e) => updateField("currency", e.target.value)}
+                style={{ border: "1px solid #ccc", padding: "4px 8px", fontSize: 12, maxWidth: 220 }}
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.code} — {c.name} ({c.symbol})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
         <table className="inv-table inv-main-data" style={{ marginTop: 6 }}>
           <thead>
@@ -913,7 +1030,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
                       boxSizing: "border-box",
                     }}
                   >
-                    <p style={{ padding: "3px 5px", fontWeight: "bold" }}>Bill To:</p>
+                    <p style={{ padding: "3px 5px", fontWeight: "bold" }}>To:</p>
                     {challanAddress || "—"}
                   </div>
                 </td>

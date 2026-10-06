@@ -104,6 +104,7 @@ export async function POST(request: Request) {
       pkgs: booking.packages ? Number(booking.packages) : null,
       weight: booking.weight_kg ? Number(booking.weight_kg) : null,
       volume: booking.volume ?? null,
+      dimension: Array.isArray(booking.dimensions_list) ? JSON.stringify(booking.dimensions_list) : null,
       etd: booking.etd ?? null,
       eta: booking.eta ?? null,
       line_items: lineItems,

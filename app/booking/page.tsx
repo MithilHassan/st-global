@@ -5,7 +5,7 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import WorldMapPortArt from "@/components/WorldMapPortArt";
 import { jsPDF } from "jspdf";
-import JsBarcode from "jsbarcode";
+import QRCode from "qrcode";
 import {
   PackageIcon,
   FileIcon,
@@ -204,105 +204,158 @@ export default function BookingPage() {
       const margin = 20;
 
       // Draw Header
-      doc.setFillColor(11, 30, 51); // ink color: #0B1E33
-      doc.rect(0, 0, pageWidth, 40, "F");
-      
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(22);
       doc.setFont("helvetica", "bold");
-      doc.text("BOOKING RECEIPT", margin, 25);
+      doc.setFontSize(20);
+      doc.setTextColor(0, 0, 0);
+      doc.text("ST GLOBAL FORWARDING", pageWidth / 2, 20, { align: "center" });
 
-      // Generate Barcode
-      const canvas = document.createElement("canvas");
-      JsBarcode(canvas, data.trackingNumber as string, {
-        format: "CODE128",
-        displayValue: false,
-        height: 40,
-        margin: 0,
-        background: "#0B1E33",
-        lineColor: "#ffffff"
-      });
-      const barcodeDataUrl = canvas.toDataURL("image/png");
-      doc.addImage(barcodeDataUrl, "PNG", pageWidth - margin - 50, 10, 50, 20);
+      doc.setFontSize(14);
+      doc.text("BOOKING RECEIPT", pageWidth / 2, 28, { align: "center" });
 
-      // Reset Text Color
-      doc.setTextColor(30, 30, 30);
-      
-      // Tracking Details Section
-      let currentY = 55;
-      doc.setFontSize(10);
+      // 2. Tracking & Date Row
+      let currentY = 35;
+      const rowHeight = 7;
+      const col1 = margin;
+      const col2 = margin + 35;
+      const col3 = margin + 115;
+      const col4 = margin + 135;
+      const wAll = pageWidth - margin * 2;
+
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.2);
+
+      doc.setFillColor(248, 248, 248);
+      doc.rect(col1, currentY, col2 - col1, rowHeight, "FD");
+
+      doc.setFillColor(255, 255, 255);
+      doc.rect(col2, currentY, col3 - col2, rowHeight, "FD");
+
+      doc.setFillColor(248, 248, 248);
+      doc.rect(col3, currentY, col4 - col3, rowHeight, "FD");
+
+      doc.setFillColor(255, 255, 255);
+      doc.rect(col4, currentY, margin + wAll - col4, rowHeight, "FD");
+
+      doc.setFontSize(9);
       doc.setFont("helvetica", "bold");
-      doc.text("Tracking Number:", margin, currentY);
+      doc.setTextColor(0, 0, 0);
+      doc.text("Tracking Number", col1 + 3, currentY + 5);
+      doc.text("Date", col3 + 3, currentY + 5);
+
       doc.setFont("helvetica", "normal");
-      doc.text(data.trackingNumber as string, margin + 35, currentY);
+      doc.text(data.trackingNumber as string, col2 + 3, currentY + 5);
+      doc.text(new Date().toLocaleDateString(), col4 + 3, currentY + 5);
 
-      doc.setFont("helvetica", "bold");
-      doc.text("Date:", pageWidth / 2, currentY);
-      doc.setFont("helvetica", "normal");
-      doc.text(new Date().toLocaleDateString(), pageWidth / 2 + 15, currentY);
-
-      currentY += 15;
+      currentY += 12;
 
       // Helper for Section Headers
       const drawSectionHeader = (title: string, y: number) => {
-        doc.setFillColor(241, 243, 237); // paper color #F1F3ED
-        doc.rect(margin, y - 6, pageWidth - margin * 2, 8, "F");
+        const height = 7;
+        doc.setFillColor(11, 85, 170); // Dark Blue #0b55aa
+        doc.rect(margin, y, pageWidth - margin * 2, height, "F");
+        doc.setFont("helvetica", "bolditalic");
         doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(28, 110, 113); // teal color #1C6E71
-        doc.text(title.toUpperCase(), margin + 2, y);
-        doc.setTextColor(30, 30, 30);
-        return y + 10;
+        doc.setTextColor(255, 255, 255);
+        doc.text(title.toUpperCase(), margin + 2, y + 5);
+        return y + height;
       };
 
-      // Helper for Key-Value pairs
-      const drawRow = (label: string, value: string, y: number) => {
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.text(label, margin, y);
+      const drawTableRow = (label: string, value: string, y: number) => {
         doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
         const splitVal = doc.splitTextToSize(value || "—", pageWidth - margin - 50);
-        doc.text(splitVal, margin + 45, y);
-        return y + (splitVal.length * 5);
+        const rowH = Math.max(7, splitVal.length * 4.5 + 2);
+
+        doc.setDrawColor(200, 200, 200);
+        doc.setFillColor(248, 248, 248);
+        doc.rect(margin, y, 40, rowH, "FD");
+
+        doc.setFillColor(255, 255, 255);
+        doc.rect(margin + 40, y, pageWidth - margin * 2 - 40, rowH, "FD");
+
+        doc.setTextColor(0, 0, 0);
+        doc.setFont("helvetica", "bold");
+        doc.text(label, margin + 2, y + 5);
+
+        doc.setFont("helvetica", "normal");
+        doc.text(splitVal, margin + 42, y + 5);
+
+        return y + rowH;
       };
 
       currentY = drawSectionHeader("Service & Goods", currentY);
-      currentY = drawRow("Service:", form.service, currentY);
-      currentY = drawRow("Goods Type:", form.goodsType, currentY);
-      currentY = drawRow("Commodity:", form.commodityDeclaration, currentY) + 5;
+      currentY = drawTableRow("Service", form.service, currentY);
+      currentY = drawTableRow("Goods Type", form.goodsType, currentY);
+      currentY = drawTableRow("Commodity", form.commodityDeclaration, currentY);
+      currentY += 4;
 
       currentY = drawSectionHeader("Route", currentY);
-      currentY = drawRow("Origin:", form.origin, currentY);
-      currentY = drawRow("Destination:", form.destination, currentY);
-      currentY = drawRow("ETD:", form.etd || "N/A", currentY);
-      currentY = drawRow("ETA:", form.eta || "N/A", currentY) + 5;
+      currentY = drawTableRow("Origin", form.origin, currentY);
+      currentY = drawTableRow("Destination", form.destination, currentY);
+      currentY = drawTableRow("ETD", form.etd || "N/A", currentY);
+      currentY = drawTableRow("ETA", form.eta || "N/A", currentY);
+      currentY += 4;
 
       currentY = drawSectionHeader("Cargo Details", currentY);
-      currentY = drawRow("Gross Weight:", `${form.grossWeight} kg`, currentY);
-      currentY = drawRow("Packages:", form.packages, currentY);
-      currentY = drawRow("Volume:", form.volume || "N/A", currentY);
-      
+      currentY = drawTableRow("Gross Weight", `${form.grossWeight} kg`, currentY);
+      currentY = drawTableRow("Packages", form.packages, currentY);
+      currentY = drawTableRow("Volume", form.volume || "N/A", currentY);
+
       const dims = form.dimensions.some((d) => d.length || d.width || d.height)
         ? form.dimensions
           .filter((d) => d.length || d.width || d.height)
           .map((d) => `${d.length || "—"}x${d.width || "—"}x${d.height || "—"} ${d.unit} (x${d.quantity || 1})`)
           .join(", ")
         : "—";
-      currentY = drawRow("Dimensions:", dims, currentY) + 5;
+      currentY = drawTableRow("Dimensions", dims, currentY);
+      currentY += 4;
 
       currentY = drawSectionHeader("Parties", currentY);
-      currentY = drawRow("Shipper:", form.shipperName, currentY);
-      currentY = drawRow("Consignee:", form.consigneeName || "N/A", currentY);
-      currentY = drawRow("Bill To:", form.billTo, currentY);
-      currentY = drawRow("Manual Tracking:", form.manualTrackingNumber || "— (auto-generated)", currentY) + 5;
+      currentY = drawTableRow("Shipper", form.shipperName, currentY);
+      currentY = drawTableRow("Consignee", form.consigneeName || "N/A", currentY);
+      currentY = drawTableRow("Bill To", form.billTo.replace(/\n/g, ", "), currentY);
+      currentY = drawTableRow("Manual Tracking", form.manualTrackingNumber || "— (auto-generated)", currentY);
+      currentY += 6;
 
-      // Footer
-      currentY += 10;
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, currentY, pageWidth - margin, currentY);
-      currentY += 8;
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "italic");
+      // QR Code Section
+      const qrBoxH = 45;
+      doc.setDrawColor(11, 85, 170); // Blue border
+      doc.setLineWidth(0.3);
+      doc.rect(margin, currentY, pageWidth - margin * 2, qrBoxH, "S");
+
+      // Generate QR Code
+      const trackingUrl = `${window.location.origin}/tracking?ref=${data.trackingNumber}`;
+      const qrDataUrl = await QRCode.toDataURL(trackingUrl, { errorCorrectionLevel: 'M', margin: 1 });
+      doc.addImage(qrDataUrl, "PNG", margin + 5, currentY + 5, 35, 35);
+
+      const textX = margin + 50;
+      let textY = currentY + 14;
+
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("SCAN TO TRACK SHIPMENT", textX, textY);
+
+      textY += 8;
+      doc.setFont("helvetica", "normal");
+      doc.text("Tracking Number: ", textX, textY);
+      doc.setFont("helvetica", "bold");
+      doc.text(data.trackingNumber as string, textX + doc.getTextWidth("Tracking Number: "), textY);
+
+      textY += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.text("Scan this QR code with a smartphone to open the shipment tracking page.", textX, textY);
+
+      textY += 8;
+      doc.setFontSize(7);
+      doc.setTextColor(50, 50, 50);
+      doc.text(trackingUrl, textX, textY);
+
+      currentY += qrBoxH + 10;
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
       doc.setTextColor(100, 100, 100);
       doc.text("Thank you for booking with ST Global Forwarding.", pageWidth / 2, currentY, { align: "center" });
 
