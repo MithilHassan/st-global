@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { Invoice, InvoiceLineItem, ChallanItem } from "@/lib/types";
 import { blankLineItem, blankChallanItem, numberToWordsCurrency, CURRENCIES, numberToWords, getCurrencyInfo } from "@/lib/types";
+import QRCode from "qrcode";
 
 interface Props {
   invoiceId: string;
@@ -112,6 +113,18 @@ export default function InvoiceEditor({ invoiceId }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data?.hbl_no) {
+      const url = `${window.location.origin}/tracking?ref=${data.hbl_no}`;
+      QRCode.toDataURL(url, { margin: 1, errorCorrectionLevel: 'M' })
+        .then(setQrCodeUrl)
+        .catch(console.error);
+    } else {
+      setQrCodeUrl(null);
+    }
+  }, [data?.hbl_no]);
 
   // ── Derived calculations ──────────────────────────────────
   const lineItems = useMemo(() => data?.line_items ?? [], [data]);
@@ -550,6 +563,12 @@ export default function InvoiceEditor({ invoiceId }: Props) {
                       Mobile: +8801719 089697 &nbsp; Mail: tapos@stbd.net
                     </p>
                   </div>
+                  {qrCodeUrl && (
+                    <div style={{ marginLeft: "auto", padding: "0 10px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                      <img src={qrCodeUrl} alt="Tracking QR" style={{ width: 64, height: 64 }} />
+                      <div style={{ fontSize: 9, marginTop: 2, fontWeight: "bold" }}>Scan to Track</div>
+                    </div>
+                  )}
                 </div>
               </td>
               <td style={{ width: "44%", verticalAlign: "top", padding: 0 }}>
@@ -738,13 +757,6 @@ export default function InvoiceEditor({ invoiceId }: Props) {
                     placeholder="Height"
                     style={{ border: "1px solid #ddd", padding: "6px 10px", width: 80, fontSize: 13, color: "#888" }}
                   />
-                  <EditableField
-                    value={dim.quantity}
-                    onChange={(v) => updateDimension(idx, "quantity", String(v))}
-                    placeholder="1"
-                    type="number"
-                    style={{ border: "1px solid #ddd", padding: "6px 10px", width: 60, fontSize: 13, color: "#333" }}
-                  />
                   <select
                     value={dim.unit || "cm"}
                     onChange={(e) => updateDimension(idx, "unit", e.target.value)}
@@ -754,6 +766,13 @@ export default function InvoiceEditor({ invoiceId }: Props) {
                     <option value="m">m</option>
                     <option value="inch">inch</option>
                   </select>
+                  <EditableField
+                    value={dim.quantity}
+                    onChange={(v) => updateDimension(idx, "quantity", String(v))}
+                    placeholder="1"
+                    type="number"
+                    style={{ border: "1px solid #ddd", padding: "6px 10px", width: 60, fontSize: 13, color: "#333" }}
+                  />
                   <button
                     onClick={() => removeDimension(idx)}
                     style={{ color: "#bbb", background: "none", border: "1px solid #f0f0f0", cursor: "pointer", fontSize: 13, padding: "6px 16px", backgroundClip: "padding-box" }}
@@ -769,7 +788,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
                 + ADD DIMENSION
               </button>
             </div>
-            
+
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 20, marginTop: 4 }}>
               <label style={{ fontSize: 11, fontWeight: "bold", color: "#666" }}>Currency</label>
               <select
