@@ -407,7 +407,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
             .inv-header-table td { padding: 0; }
             .inv-logo-section { display: flex; align-items: center; padding: 10px; }
             .inv-logo-icon { width: 55px; height: auto; margin-right: 15px; }
-            .inv-company-info h2 { margin: 0; color: #002b80; font-size: 24px; letter-spacing: 0.5px; }
+            .inv-company-info h2 { margin: 0; color: #002b80; font-size: 18px; letter-spacing: 0.5px; }
             .inv-company-info p { margin: 5px 0 0; font-size: 11px; font-weight: bold; color: #002b80; white-space: nowrap; }
             .inv-title-cell { text-align: center; font-size: 28px; font-weight: bold; border-bottom: 1px solid black; height: 40px; vertical-align: middle; }
             .inv-meta-header td { text-align: center; font-weight: bold; font-size: 14px; border-bottom: 1px solid black; padding: 3px; }
@@ -1248,7 +1248,7 @@ export default function InvoiceEditor({ invoiceId }: Props) {
         .inv-company-info h2 {
           margin: 0;
           color: #002b80;
-          font-size: 24px;
+          font-size: 18px;
           letter-spacing: 0.5px;
         }
         .inv-company-info p {
